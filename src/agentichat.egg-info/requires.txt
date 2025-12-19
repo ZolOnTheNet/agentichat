@@ -1,0 +1,17 @@
+aiohttp>=3.9
+click>=8.1
+pyyaml>=6.0
+aiosqlite>=0.19
+prompt-toolkit>=3.0
+rich>=13.0
+
+[dev]
+pytest>=7.4
+pytest-asyncio>=0.21
+pytest-cov>=4.1
+ruff>=0.1
+mypy>=1.5
+
+[embeddings]
+sentence-transformers>=2.2
+numpy>=1.24

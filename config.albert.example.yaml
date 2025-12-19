@@ -1,0 +1,88 @@
+# Configuration exemple pour utiliser Albert API (Etalab)
+# Copier ce fichier vers ~/.agentichat/config.yaml
+#
+# 📋 Étapes pour configurer Albert :
+# 1. Aller sur https://albert.api.etalab.gouv.fr
+# 2. Créer un compte (connexion ProConnect pour agents publics)
+# 3. Générer une clé API dans votre profil
+# 4. Remplacer YOUR_API_KEY_HERE ci-dessous par votre clé
+# 5. Copier ce fichier : cp config.albert.example.yaml ~/.agentichat/config.yaml
+# 6. Lancer agentichat
+
+# Backend par défaut
+default_backend: albert
+
+# Configuration Albert
+backends:
+  albert:
+    type: albert
+    url: https://albert.api.etalab.gouv.fr
+    model: AgentPublic/albertlight-7b
+    api_key: YOUR_API_KEY_HERE  # ⚠️ REMPLACER PAR VOTRE CLÉ API
+    timeout: 60
+    max_tokens: 4096
+    temperature: 0.7
+
+  # Vous pouvez aussi garder Ollama en backup
+  ollama:
+    type: ollama
+    url: http://localhost:11434
+    model: qwen2.5-coder:7b
+    timeout: 300
+    max_tokens: 4096
+    temperature: 0.7
+
+# Configuration du sandbox de sécurité
+sandbox:
+  max_file_size: 1000000  # 1 MB
+  blocked_paths:
+    - "**/.env"
+    - "**/*.key"
+    - "**/*.pem"
+    - "**/id_rsa"
+    - "**/credentials.json"
+    - "**/.ssh/*"
+
+# Configuration des confirmations utilisateur
+confirmations:
+  text_operations: true
+  shell_commands: true
+
+# Boucle agentique
+max_iterations: 10
+
+# Logging
+# Pour voir les détails des appels API Albert, changez en DEBUG
+# logging:
+#   level: DEBUG
+
+# 🎯 Tools disponibles avec Albert (18 au total) :
+#
+# 📁 Files (6 tools)
+#   - read_file, write_file, list_files, delete_file
+#   - search_text, glob_search
+#
+# 📂 Directories (4 tools)
+#   - create_directory, delete_directory
+#   - move_file, copy_file
+#
+# 💻 System (1 tool)
+#   - shell_exec
+#
+# 🌐 Web (2 tools)
+#   - web_fetch, web_search
+#
+# 📋 Productivity (1 tool)
+#   - todo_write
+#
+# ⚡ Albert-specific (4 tools)
+#   - albert_search       : Recherche sémantique dans documents
+#   - albert_ocr          : Extraction texte images/PDF
+#   - albert_transcription : Audio → texte
+#   - albert_embeddings   : Vecteurs pour similarité
+#
+# 💡 Exemples d'utilisation :
+#   "Recherche dans les docs officiels sur l'IA"
+#   "Extrais le texte de screenshot.png"
+#   "Transcris meeting.mp3"
+#   "Analyse ce document PDF avec OCR"

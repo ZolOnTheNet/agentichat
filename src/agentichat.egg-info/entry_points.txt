@@ -1,0 +1,2 @@
+[console_scripts]
+agentichat = agentichat.main:cli

@@ -1,0 +1,2 @@
+Voici un exemple de texte pour analyser.
+Il contient plusieurs lignes et des mots.

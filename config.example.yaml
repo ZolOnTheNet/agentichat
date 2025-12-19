@@ -1,0 +1,108 @@
+# Configuration exemple pour agentichat
+# Copier ce fichier vers ~/.agentichat/config.yaml ou .agentichat/config.yaml (workspace local)
+
+# Backend par défaut à utiliser
+# Options : ollama, albert
+default_backend: ollama  # Changez en 'albert' pour utiliser l'API Albert
+
+# Backends disponibles
+backends:
+  # Ollama local
+  ollama:
+    type: ollama
+    url: http://localhost:11434
+    model: llama3:8b
+    timeout: 300  # 5 minutes pour les requêtes complexes avec tools
+    max_tokens: 4096
+    temperature: 0.7
+
+  # Albert API (Etalab - Service public français)
+  # Décommentez et configurez pour utiliser Albert
+  albert:
+    type: albert
+    url: https://albert.api.etalab.gouv.fr
+    model: AgentPublic/albertlight-7b  # Modèles disponibles: albertlight-7b, etc.
+    api_key: YOUR_API_KEY_HERE  # REQUIS - Obtenir sur https://albert.api.etalab.gouv.fr
+    timeout: 60  # Timeout en secondes
+    max_tokens: 4096
+    temperature: 0.7
+    #
+    # ⚡ Features exclusives Albert (4 tools supplémentaires) :
+    # - albert_search      : Recherche sémantique dans vos documents indexés
+    # - albert_ocr         : Extraction de texte depuis images/PDF (vision models)
+    # - albert_transcription : Conversion audio → texte (MP3, WAV, etc.)
+    # - albert_embeddings  : Création de vecteurs pour recherche sémantique
+    #
+    # 💡 Pour utiliser Albert :
+    # 1. Créer un compte sur https://albert.api.etalab.gouv.fr
+    # 2. Générer une clé API
+    # 3. Remplacer YOUR_API_KEY_HERE par votre clé
+    # 4. Changer default_backend: albert (ligne 5)
+
+  # Ollama distant (exemple)
+  # ollama_remote:
+  #   type: ollama
+  #   url: http://192.168.1.100:11434
+  #   model: mistral:latest
+  #   timeout: 60
+  #   max_tokens: 8192
+  #   temperature: 0.5
+
+  # OpenAI (Phase 4+, non encore implémenté)
+  # openai:
+  #   type: openai
+  #   url: https://api.openai.com/v1
+  #   model: gpt-4
+  #   api_key: ${OPENAI_API_KEY}
+  #   timeout: 60
+  #   max_tokens: 4096
+  #   temperature: 0.7
+
+  # vLLM (Phase 4+, non encore implémenté)
+  # vllm:
+  #   type: vllm
+  #   url: http://localhost:8000
+  #   model: meta-llama/Llama-3-8b-chat-hf
+  #   timeout: 30
+  #   max_tokens: 4096
+  #   temperature: 0.7
+
+# Configuration du sandbox de sécurité
+sandbox:
+  # Taille maximale d'un fichier (en octets)
+  max_file_size: 1000000  # 1 MB
+
+  # Chemins bloqués (patterns glob)
+  blocked_paths:
+    - "**/.env"
+    - "**/*.key"
+    - "**/*.pem"
+    - "**/id_rsa"
+    - "**/credentials.json"
+    - "**/.ssh/*"
+
+  # Commandes autorisées (null = toutes autorisées)
+  # allowed_commands:
+  #   - git
+  #   - npm
+  #   - pytest
+  #   - ruff
+
+# Configuration des confirmations utilisateur
+confirmations:
+  # Confirmer les opérations d'écriture/suppression de fichiers
+  text_operations: true
+
+  # Confirmer les commandes shell
+  shell_commands: true
+
+# Répertoire de données (historique, cache, etc.)
+# Par défaut: ~/.agentichat/
+# data_dir: ~/.agentichat
+
+# Nombre maximum d'itérations de la boucle agentique
+max_iterations: 10
+
+# Configuration du proxy daemon (Phase 1+)
+proxy_port: 5157
+proxy_host: 127.0.0.1

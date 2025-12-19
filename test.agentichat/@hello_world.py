@@ -1,0 +1,1 @@
+def hello():\n    name = input('Quel est votre nom? ')\n    print(f'Hello, {name}!')
