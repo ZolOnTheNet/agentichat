@@ -51,10 +51,11 @@ class AgentLoop:
                     "Vous êtes un assistant IA avec accès à des outils pour interagir avec "
                     "le système de fichiers, le web et gérer des tâches.\n\n"
                     "Quand l'utilisateur vous demande quelque chose, appelez les outils appropriés "
-                    "en utilisant le format suivant :\n\n"
+                    "en utilisant le format suivant (\"arguments\" ou \"parameters\") :\n\n"
                     "```json\n"
                     '{"name": "nom_outil", "arguments": {"param1": "valeur1", "param2": "valeur2"}}\n'
                     "```\n\n"
+                    "Note: Vous pouvez aussi utiliser \"parameters\" au lieu de \"arguments\" si vous préférez.\n\n"
                     "Outils disponibles :\n\n"
                     "**Fichiers :**\n"
                     "- read_file : lit un fichier (param: path)\n"

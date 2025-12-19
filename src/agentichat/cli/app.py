@@ -37,6 +37,7 @@ from ..tools.shell import ShellExecTool
 from ..tools.todo_tool import TodoWriteTool
 from ..tools.web_tools import WebFetchTool, WebSearchTool
 from ..utils.logger import get_logger, setup_logger
+from ..utils.model_metadata import ModelMetadataManager
 from ..utils.sandbox import Sandbox
 from .albert_manager import AlbertManager
 from .confirmation import ConfirmationManager
@@ -67,6 +68,7 @@ class ChatApp:
         self.registry: ToolRegistry | None = None
         self.agent: AgentLoop | None = None
         self.confirmation_manager: ConfirmationManager | None = None
+        self.model_metadata = ModelMetadataManager(config.data_dir)
 
         # Créer l'éditeur avec historique ET bottom toolbar
         history_file = config.data_dir / "history.txt"
@@ -138,6 +140,16 @@ class ChatApp:
 
         backend_config = self.config.backends[backend_name]
 
+        # Appliquer les metadata sauvegardées si max_parallel_tools n'est pas configuré
+        max_parallel_tools = backend_config.max_parallel_tools
+        if max_parallel_tools is None:
+            saved_limit = self.model_metadata.get_max_parallel_tools(backend_config.model)
+            if saved_limit is not None:
+                max_parallel_tools = saved_limit
+                logger.info(
+                    f"Using saved max_parallel_tools={saved_limit} for model '{backend_config.model}'"
+                )
+
         # Instancier le backend selon le type
         if backend_config.type == "ollama":
             self.backend = OllamaBackend(
@@ -146,6 +158,7 @@ class ChatApp:
                 timeout=backend_config.timeout,
                 max_tokens=backend_config.max_tokens,
                 temperature=backend_config.temperature,
+                max_parallel_tools=max_parallel_tools,
             )
         elif backend_config.type == "albert":
             self.backend = AlbertBackend(
@@ -155,6 +168,7 @@ class ChatApp:
                 timeout=backend_config.timeout,
                 max_tokens=backend_config.max_tokens,
                 temperature=backend_config.temperature,
+                max_parallel_tools=max_parallel_tools,
             )
         else:
             self.console.print(
@@ -573,13 +587,43 @@ class ChatApp:
             self.console.print("[dim]Le LLM a été arrêté. Vous pouvez continuer avec une nouvelle demande.[/dim]\n")
             logger.info("Request cancelled by user with Ctrl+C")
         except BackendError as e:
-            # Erreur backend (potentiellement modèle invalide)
+            # Erreur backend (potentiellement modèle invalide ou contrainte)
+            error_msg = str(e)
+
+            # Détecter un rate limit (quota tokens dépassé)
+            if "tokens per minute exceeded" in error_msg.lower() or "rate limit" in error_msg.lower():
+                self.console.print(
+                    f"\n[bold yellow]⚠ Quota API dépassé:[/bold yellow] {e}\n"
+                )
+                self.console.print(
+                    "[yellow]L'API Albert limite le nombre de tokens par minute.[/yellow]\n"
+                    "[dim]Solutions:[/dim]\n"
+                    "  • Attendez ~60 secondes avant de réessayer\n"
+                    "  • Utilisez [bold]/clear[/bold] pour réduire l'historique\n"
+                    "  • Utilisez un modèle plus petit avec [bold]/albert run meta-llama/Llama-3.1-8B-Instruct[/bold]\n"
+                )
+                return
+
+            # Détecter et sauvegarder les contraintes du modèle
+            if self.backend and self.model_metadata.detect_and_save_constraint(
+                self.backend.model, error_msg
+            ):
+                self.console.print(
+                    f"\n[bold yellow]⚠ Contrainte détectée:[/bold yellow] {e}\n"
+                )
+                self.console.print(
+                    "[bold green]✓[/bold green] Contrainte sauvegardée automatiquement. "
+                    "Veuillez réessayer votre commande.\n"
+                )
+                return
+
+            # Sinon, afficher l'erreur normalement
             self.console.print(f"\n[bold red]Erreur:[/bold red] {e}")
             logger.error(f"Backend error in agent loop: {e}", exc_info=True)
 
             # Vérifier si c'est une erreur de modèle
-            error_msg = str(e).lower()
-            if "model" in error_msg or "not found" in error_msg or "404" in error_msg:
+            error_msg_lower = error_msg.lower()
+            if "model" in error_msg_lower or "not found" in error_msg_lower or "404" in error_msg_lower:
                 self.console.print(
                     "[bold yellow]⚠ Le modèle semble invalide.[/bold yellow]\n"
                     "[dim]Voulez-vous choisir un autre modèle ? (y/n)[/dim] ",
@@ -871,6 +915,16 @@ Si vous rencontrez une erreur ou atteignez la limite d'itérations :
                         del self.registry._tools[tool_name]
                         logger.debug(f"Removed tool: {tool_name}")
 
+        # Appliquer les metadata sauvegardées si max_parallel_tools n'est pas configuré
+        max_parallel_tools = backend_config.max_parallel_tools
+        if max_parallel_tools is None:
+            saved_limit = self.model_metadata.get_max_parallel_tools(backend_config.model)
+            if saved_limit is not None:
+                max_parallel_tools = saved_limit
+                logger.info(
+                    f"Using saved max_parallel_tools={saved_limit} for model '{backend_config.model}'"
+                )
+
         # Instancier le nouveau backend
         try:
             if backend_config.type == "ollama":
@@ -880,6 +934,7 @@ Si vous rencontrez une erreur ou atteignez la limite d'itérations :
                     timeout=backend_config.timeout,
                     max_tokens=backend_config.max_tokens,
                     temperature=backend_config.temperature,
+                    max_parallel_tools=max_parallel_tools,
                 )
                 # Initialiser le gestionnaire Ollama
                 self.ollama_manager = OllamaManager(
@@ -895,6 +950,7 @@ Si vous rencontrez une erreur ou atteignez la limite d'itérations :
                     timeout=backend_config.timeout,
                     max_tokens=backend_config.max_tokens,
                     temperature=backend_config.temperature,
+                    max_parallel_tools=max_parallel_tools,
                 )
                 # Initialiser le gestionnaire Albert
                 self.albert_manager = AlbertManager(

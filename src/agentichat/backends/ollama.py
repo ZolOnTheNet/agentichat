@@ -63,21 +63,25 @@ class OllamaBackend(Backend):
 
         # Si pas de blocs markdown, chercher directement des objets JSON dans le texte
         if not json_objects:
-            # Pattern plus simple pour des JSONs simples sur une ligne
-            json_objects = re.findall(
-                r'\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[^}]*\}\s*\}',
-                content
-            )
+            # Pattern pour JSONs simples (supporter "arguments" et "parameters")
+            # Chercher tous les objets avec "name" et un objet imbriqué
+            potential_jsons = re.findall(r'\{[^{}]*"name"[^{}]*\{[^}]*\}[^{}]*\}', content)
+            json_objects.extend(potential_jsons)
 
         # Parser chaque objet JSON trouvé
         for json_str in json_objects:
             try:
                 data = json.loads(json_str)
-                if isinstance(data, dict) and "name" in data and "arguments" in data:
+                if isinstance(data, dict) and "name" in data:
+                    # Supporter "arguments" et "parameters" (certains modèles utilisent parameters)
+                    arguments = data.get("arguments") or data.get("parameters") or {}
+                    if not isinstance(arguments, dict):
+                        arguments = {}
+
                     tool_call = ToolCall(
                         id=str(uuid.uuid4()),
                         name=data["name"],
-                        arguments=data["arguments"] if isinstance(data["arguments"], dict) else {},
+                        arguments=arguments,
                     )
                     tool_calls.append(tool_call)
                     logger.info(f"Extracted tool call from text: {data['name']}")
@@ -266,6 +270,11 @@ class OllamaBackend(Backend):
             if extracted_calls:
                 tool_calls = extracted_calls
                 logger.info("Using fallback: extracted tool calls from response text")
+
+        # Limiter le nombre de tool calls si nécessaire
+        tool_calls = self._limit_tool_calls(tool_calls)
+        if tool_calls and self.max_parallel_tools and len(tool_calls) == self.max_parallel_tools:
+            logger.info(f"Limited tool calls to {self.max_parallel_tools} (max_parallel_tools setting)")
 
         # Déterminer la raison de fin
         finish_reason = "stop"

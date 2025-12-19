@@ -21,11 +21,12 @@ backends:
   albert:
     type: albert
     url: https://albert.api.etalab.gouv.fr
-    model: AgentPublic/albertlight-7b  # Modèles disponibles: albertlight-7b, etc.
+    model: mistralai/Mistral-Small-3.2-24B-Instruct-2506  # Voir MODEL_ALBERT.md
     api_key: YOUR_API_KEY_HERE  # REQUIS - Obtenir sur https://albert.api.etalab.gouv.fr
-    timeout: 60  # Timeout en secondes
+    timeout: 180  # Timeout en secondes (augmenté pour gros modèles)
     max_tokens: 4096
     temperature: 0.7
+    # max_parallel_tools: 1  # Limite de tools parallèles (détecté automatiquement si besoin)
     #
     # ⚡ Features exclusives Albert (4 tools supplémentaires) :
     # - albert_search      : Recherche sémantique dans vos documents indexés

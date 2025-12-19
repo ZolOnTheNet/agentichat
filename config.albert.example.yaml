@@ -17,11 +17,12 @@ backends:
   albert:
     type: albert
     url: https://albert.api.etalab.gouv.fr
-    model: AgentPublic/albertlight-7b
+    model: mistralai/Mistral-Small-3.2-24B-Instruct-2506  # Voir MODEL_ALBERT.md
     api_key: YOUR_API_KEY_HERE  # ⚠️ REMPLACER PAR VOTRE CLÉ API
-    timeout: 60
+    timeout: 180  # Augmenté pour gros modèles et génération de code
     max_tokens: 4096
     temperature: 0.7
+    # max_parallel_tools: 1  # Détecté automatiquement si le modèle ne supporte qu'un tool à la fois
 
   # Vous pouvez aussi garder Ollama en backup
   ollama:

@@ -120,7 +120,7 @@ class AlbertBackend(Backend):
                 logger.debug(f"Failed to parse [TOOL_CALLS] arguments: {json_str[:100]}... Error: {e}")
                 continue
 
-        # Format 2: Blocs ```json ... ``` avec name et arguments
+        # Format 2: Blocs ```json ... ``` avec name et arguments/parameters
         json_code_blocks = re.findall(r'```json\s*(.+?)\s*```', content, re.DOTALL)
 
         for block in json_code_blocks:
@@ -139,11 +139,16 @@ class AlbertBackend(Backend):
                 if brace_count == 0 and current_obj.strip():
                     try:
                         data = json.loads(current_obj.strip())
-                        if isinstance(data, dict) and "name" in data and "arguments" in data:
+                        if isinstance(data, dict) and "name" in data:
+                            # Supporter "arguments" et "parameters"
+                            arguments = data.get("arguments") or data.get("parameters") or {}
+                            if not isinstance(arguments, dict):
+                                arguments = {}
+
                             tool_call = ToolCall(
                                 id=str(uuid.uuid4()),
                                 name=data["name"],
-                                arguments=data["arguments"] if isinstance(data["arguments"], dict) else {},
+                                arguments=arguments,
                             )
                             tool_calls.append(tool_call)
                             logger.info(f"Extracted tool call from JSON block: {data['name']}")
@@ -151,6 +156,28 @@ class AlbertBackend(Backend):
                         logger.debug(f"Failed to parse JSON block: {current_obj[:100]}... Error: {e}")
 
                     current_obj = ""
+
+        # Format 3: JSON direct dans le texte (sans blocs markdown)
+        # Chercher tous les objets avec "name" et des paramètres
+        if not tool_calls:
+            potential_jsons = re.findall(r'\{[^{}]*"name"[^{}]*\{[^}]*\}[^{}]*\}', content)
+            for json_str in potential_jsons:
+                try:
+                    data = json.loads(json_str)
+                    if isinstance(data, dict) and "name" in data:
+                        arguments = data.get("arguments") or data.get("parameters") or {}
+                        if not isinstance(arguments, dict):
+                            arguments = {}
+
+                        tool_call = ToolCall(
+                            id=str(uuid.uuid4()),
+                            name=data["name"],
+                            arguments=arguments,
+                        )
+                        tool_calls.append(tool_call)
+                        logger.info(f"Extracted tool call from direct JSON: {data['name']}")
+                except json.JSONDecodeError as e:
+                    logger.debug(f"Failed to parse direct JSON: {json_str[:100]}... Error: {e}")
 
         return tool_calls if tool_calls else None
 
@@ -358,6 +385,11 @@ class AlbertBackend(Backend):
             if extracted_calls:
                 tool_calls = extracted_calls
                 logger.info("Using fallback: extracted tool calls from response text")
+
+        # Limiter le nombre de tool calls si nécessaire
+        tool_calls = self._limit_tool_calls(tool_calls)
+        if tool_calls and self.max_parallel_tools and len(tool_calls) == self.max_parallel_tools:
+            logger.info(f"Limited tool calls to {self.max_parallel_tools} (max_parallel_tools setting)")
 
         # Déterminer la raison de fin
         finish_reason = choice.get("finish_reason", "stop")

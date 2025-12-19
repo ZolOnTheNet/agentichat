@@ -16,6 +16,7 @@ class BackendConfig:
     max_tokens: int = 4096
     temperature: float = 0.7
     api_key: str | None = None
+    max_parallel_tools: int | None = None  # None = illimité, 1 = un seul à la fois
 
 
 @dataclass
@@ -102,6 +103,7 @@ def validate_config(config: dict[str, Any]) -> Config:
             max_tokens=backend_data.get("max_tokens", 4096),
             temperature=backend_data.get("temperature", 0.7),
             api_key=backend_data.get("api_key"),
+            max_parallel_tools=backend_data.get("max_parallel_tools"),
         )
 
     # Vérifier que le backend par défaut existe

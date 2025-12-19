@@ -60,6 +60,24 @@ class Backend(ABC):
         self.max_tokens = kwargs.get("max_tokens", 4096)
         self.temperature = kwargs.get("temperature", 0.7)
         self.api_key = kwargs.get("api_key")
+        self.max_parallel_tools = kwargs.get("max_parallel_tools")  # None = illimité
+
+    def _limit_tool_calls(self, tool_calls: list[ToolCall] | None) -> list[ToolCall] | None:
+        """Limite le nombre de tool calls selon max_parallel_tools.
+
+        Args:
+            tool_calls: Liste des tool calls à limiter
+
+        Returns:
+            Liste limitée ou None
+        """
+        if not tool_calls or not self.max_parallel_tools:
+            return tool_calls
+
+        if len(tool_calls) > self.max_parallel_tools:
+            return tool_calls[:self.max_parallel_tools]
+
+        return tool_calls
 
     @abstractmethod
     async def chat(
