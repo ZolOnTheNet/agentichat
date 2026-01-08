@@ -36,6 +36,7 @@ from ..tools.search import SearchTextTool
 from ..tools.shell import ShellExecTool
 from ..tools.todo_tool import TodoWriteTool
 from ..tools.web_tools import WebFetchTool, WebSearchTool
+from ..utils.database import DatabaseManager
 from ..utils.logger import get_logger, setup_logger
 from ..utils.model_metadata import ModelMetadataManager
 from ..utils.sandbox import Sandbox
@@ -68,7 +69,11 @@ class ChatApp:
         self.registry: ToolRegistry | None = None
         self.agent: AgentLoop | None = None
         self.confirmation_manager: ConfirmationManager | None = None
-        self.model_metadata = ModelMetadataManager(config.data_dir)
+        self.model_metadata = ModelMetadataManager(config.config_dir)  # Global
+
+        # Créer le gestionnaire de base de données (local au projet)
+        db_path = config.data_dir / "agentichat.db"
+        self.db = DatabaseManager(db_path)
 
         # Créer l'éditeur avec historique ET bottom toolbar
         history_file = config.data_dir / "history.txt"
@@ -89,6 +94,9 @@ class ChatApp:
         """Initialise l'application (backend, tools, etc.)."""
         # Créer le répertoire de données si nécessaire
         self.config.data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialiser la base de données
+        await self.db.initialize()
 
         # Initialiser le logger
         log_level = "DEBUG" if self.debug_mode else "INFO"
@@ -280,6 +288,10 @@ class ChatApp:
             confirmation_callback=self.confirmation_manager.confirm,
         )
 
+        # Créer une nouvelle session dans la base de données
+        await self.db.create_session(backend=backend_name, model=backend_config.model)
+        logger.info(f"Session created: {self.db.session_id}")
+
     async def _verify_model(self) -> bool:
         """Vérifie que le modèle configuré existe et propose de choisir si non.
 
@@ -395,16 +407,19 @@ class ChatApp:
                     continue
 
                 # Vérifier les commandes spéciales
-                if user_input in ["/quit", "/exit", "/q"]:
+                if user_input in ["/quit", "/exit", "/q", "/bye"]:
                     break
 
                 if user_input == "/clear":
                     self.messages = []
+                    # Réinitialiser aussi le mode passthrough (nouvelle conversation)
+                    if self.confirmation_manager:
+                        self.confirmation_manager.reset_passthrough()
                     self.console.print("[dim]Conversation réinitialisée[/dim]\n")
                     continue
 
-                if user_input == "/help":
-                    self._show_help()
+                if user_input.startswith("/help"):
+                    self._show_help(user_input)
                     continue
 
                 # Commande /config
@@ -432,12 +447,38 @@ class ChatApp:
                     self._handle_prompt_command(user_input)
                     continue
 
-                # Réinitialiser le mode passthrough pour cette requête
-                if self.confirmation_manager:
-                    self.confirmation_manager.reset_passthrough()
+                # Commande /model
+                if user_input == "/model":
+                    self._handle_model_command()
+                    continue
+
+                # Commande /info
+                if user_input == "/info":
+                    await self._handle_info_command()
+                    continue
+
+                # Commande /compress
+                if user_input.startswith("/compress"):
+                    await self._handle_compress_command(user_input)
+                    continue
+
+                # Commande /! pour exécuter directement une commande shell
+                if user_input.startswith("/!"):
+                    await self._handle_shell_command(user_input)
+                    continue
+
+                # Note: Le mode passthrough (Always) persiste pour toute la session
+                # et n'est pas réinitialisé entre les requêtes
 
                 # Ajouter le message utilisateur
-                self.messages.append(Message(role="user", content=user_input))
+                user_message = Message(role="user", content=user_input)
+                self.messages.append(user_message)
+
+                # Sauvegarder le message dans la base de données
+                await self.db.save_message(user_message)
+
+                # Vérifier si un avertissement de compression est nécessaire
+                self._check_compression_warning()
 
                 # Exécuter la boucle agentique
                 await self._process_agent_loop()
@@ -450,12 +491,55 @@ class ChatApp:
                 self.console.print("\n[dim]Annulé[/dim]")
                 continue
             except Exception as e:
-                self.console.print(f"\n[bold red]Erreur:[/bold red] {e}")
+                # Échapper le message d'erreur pour éviter les conflits de markup
+                error_msg = str(e).replace("[", "\\[").replace("]", "\\]")
+                self.console.print(f"\n[bold red]Erreur:[/bold red] {error_msg}")
                 self.console.print("[dim]Vous pouvez continuer avec une nouvelle commande[/dim]\n")
                 logger.error(f"Unexpected error in main loop: {e}", exc_info=True)
                 continue
 
         self.console.print("\n[dim]Au revoir ![/dim]")
+
+    def _check_compression_warning(self) -> None:
+        """Vérifie et affiche un avertissement si la compression est recommandée."""
+        compress_config = self.config.compression
+
+        # Si pas de seuil configuré, pas d'avertissement
+        if not compress_config.auto_threshold:
+            return
+
+        message_count = len(self.messages)
+        threshold = compress_config.auto_threshold
+        warning_pct = compress_config.warning_threshold
+
+        # Calculer le pourcentage
+        if threshold > 0:
+            current_pct = message_count / threshold
+
+            # Afficher avertissement si on dépasse le seuil d'avertissement
+            if current_pct >= warning_pct:
+                pct_display = int(current_pct * 100)
+
+                # Message adapté selon si on a dépassé le seuil ou pas
+                if message_count >= threshold:
+                    # Dépassé
+                    over_pct = int((current_pct - 1) * 100)
+                    status = f"[bold red]seuil dépassé de {over_pct}%[/bold red]" if over_pct > 0 else "[bold red]seuil atteint[/bold red]"
+                else:
+                    # Proche mais pas encore dépassé
+                    status = f"{pct_display}% du seuil"
+
+                self.console.print(
+                    f"\n[bold yellow]💡 Info:[/bold yellow] Vous avez {message_count}/{threshold} messages "
+                    f"({status})"
+                )
+                self.console.print(
+                    "[dim]→ Utilisez [bold]/compress[/bold] pour réduire l'historique et économiser des tokens[/dim]"
+                )
+                self.console.print(
+                    "[dim]→ Tapez [bold]/help compress[/bold] pour plus d'infos ou "
+                    "[bold]/config compress[/bold] pour configurer[/dim]\n"
+                )
 
     async def _process_agent_loop(self) -> None:
         """Exécute la boucle agentique et affiche les résultats."""
@@ -551,8 +635,15 @@ class ChatApp:
                 except asyncio.CancelledError:
                     pass
 
-            # Mettre à jour l'historique
+            # Mettre à jour l'historique et sauvegarder les nouveaux messages
+            old_count = len(self.messages)
             self.messages = updated_messages
+            new_count = len(self.messages)
+
+            # Sauvegarder les nouveaux messages dans la base de données
+            if new_count > old_count:
+                for msg in self.messages[old_count:]:
+                    await self.db.save_message(msg)
 
             # Afficher les statistiques finales
             elapsed_total = time.time() - start_time
@@ -618,7 +709,9 @@ class ChatApp:
                 return
 
             # Sinon, afficher l'erreur normalement
-            self.console.print(f"\n[bold red]Erreur:[/bold red] {e}")
+            # Échapper le message d'erreur pour éviter les conflits de markup
+            error_display = str(e).replace("[", "\\[").replace("]", "\\]")
+            self.console.print(f"\n[bold red]Erreur:[/bold red] {error_display}")
             logger.error(f"Backend error in agent loop: {e}", exc_info=True)
 
             # Vérifier si c'est une erreur de modèle
@@ -653,7 +746,9 @@ class ChatApp:
                 self.console.print("[dim]→ Vous pouvez continuer avec une nouvelle commande[/dim]\n")
 
         except Exception as e:
-            self.console.print(f"\n[bold red]Erreur:[/bold red] {e}")
+            # Échapper le message d'erreur pour éviter les conflits de markup
+            error_display = str(e).replace("[", "\\[").replace("]", "\\]")
+            self.console.print(f"\n[bold red]Erreur:[/bold red] {error_display}")
             self.console.print("[dim]→ Vous pouvez continuer avec une nouvelle commande[/dim]\n")
             logger.error(f"Error in agent loop: {e}", exc_info=True)
 
@@ -697,107 +792,296 @@ class ChatApp:
 
         return info_line
 
-    def _show_help(self) -> None:
-        """Affiche l'aide."""
+    def _show_help(self, command: str = "/help") -> None:
+        """Affiche l'aide générale ou spécifique à un topic.
+
+        Args:
+            command: Commande complète (ex: "/help", "/help compress")
+        """
+        parts = command.split(maxsplit=1)
+        topic = parts[1].lower() if len(parts) > 1 else None
+
+        # Aide spécifique à un topic
+        if topic:
+            self._show_topic_help(topic)
+            return
+
+        # Aide générale (succincte)
         help_text = """
-# Aide agentichat (Mode Agentique)
+# agentichat - Aide Rapide
 
-## Commandes disponibles
+## Commandes Principales
+- `/help <topic>` - Aide détaillée sur un sujet
+- `/quit`, `/exit` - Quitter l'application
+- `/clear` - Réinitialiser la conversation
+- `/info` - Statistiques de la session
+- `/compress` - Compresser l'historique
+- `/model` - Afficher le modèle actif
+- `/! <cmd>` - Exécuter une commande shell
 
-- `/help` - Affiche cette aide
-- `/quit`, `/exit`, `/q` - Quitte l'application
-- `/clear` - Réinitialise la conversation
-- `/config show` - Affiche la configuration actuelle
+## Topics Disponibles
+Tapez `/help <topic>` pour plus d'informations :
+
+- **compress** - Compression de conversation et gestion mémoire
+- **config** - Configuration de l'application
+- **log** - Visualisation et recherche dans les logs
+- **ollama** - Commandes pour backend Ollama
+- **albert** - Commandes pour backend Albert
+- **prompt** - Personnalisation du prompt
+- **tools** - Liste complète des tools disponibles
+- **shortcuts** - Raccourcis clavier
+
+## Raccourcis Essentiels
+- `Enter` - Envoyer │ `Ctrl+J` / `Alt+Enter` - Nouvelle ligne
+- `Ctrl+C` - Annuler traitement │ `Ctrl+D` - Quitter
+- `↑` / `↓` - Historique │ `ESC` - Vider saisie
+
+## Exemples
+```
+> Liste les fichiers Python dans src/
+> Crée un fichier hello.py avec Hello World
+> Cherche "TODO" dans tout le projet
+```
+
+💡 **Astuce:** Tapez `/help compress` pour optimiser votre usage de tokens !
+"""
+        self.console.print(Markdown(help_text))
+
+    def _show_topic_help(self, topic: str) -> None:
+        """Affiche l'aide détaillée pour un topic spécifique.
+
+        Args:
+            topic: Nom du topic (compress, config, log, etc.)
+        """
+        topics = {
+            "compress": """
+# Compression de Conversation
+
+## Commandes
+
+### /compress
+Compresse la conversation en résumant avec le LLM.
+- `/compress` - Compresse tous les messages en un résumé
+- `/compress --max N` ou `-m N` - Garde max N messages
+- `/compress --keep N` - Garde les N derniers messages
+
+### /config compress
+Configure la compression automatique.
+- `/config compress` - Affiche la configuration
+- `/config compress --enable` - Active l'auto-compression
+- `/config compress --disable` - Désactive l'auto-compression
+- `/config compress --keep N` - Définit le nombre de messages à garder
+- `/config compress --auto <seuil> <garde>` - Configure l'auto-compression
+  Exemple: `/config compress --auto 20 5` (compresse à 20 msg, garde 5)
+
+## Pourquoi Compresser ?
+- **Économise des tokens** (= réduit coûts API)
+- **Accélère les réponses** (moins de contexte à traiter)
+- **Conserve l'essentiel** (résumé intelligent par le LLM)
+
+## Exemples
+```
+/compress --keep 10        # Résume tout sauf les 10 derniers
+/config compress --auto 20 5   # Auto-compresse à 20 messages, garde 5
+```
+""",
+            "config": """
+# Configuration
+
+## Commandes
+
+### /config show
+Affiche la configuration actuelle (backend, modèle, debug, etc.)
+
+### /config backend
+Gestion des backends LLM.
 - `/config backend list` - Liste les backends configurés
 - `/config backend <nom>` - Change de backend
-- `/config debug on` - Active les logs de debug
-- `/config debug off` - Désactive les logs de debug
-- `/log [show]` - Affiche les nouveaux logs
-- `/log fullshow` - Affiche tous les logs
-- `/log clear` - Marque un point de clear
-- `/log search <texte>` - Recherche dans les logs
-- `/log config` - Configure l'affichage des logs
-- `/log status` - Statistiques des logs
-- `/ollama list` - Liste les modèles Ollama
-- `/ollama show <model>` - Info d'un modèle
-- `/ollama run <model>` - Change de modèle
-- `/ollama ps` - Modèles en cours
-- `/ollama create/cp/rm` - Gestion des modèles
-- `/albert list` - Liste les modèles Albert
-- `/albert show <model>` - Info d'un modèle
-- `/albert run <model>` - Change de modèle
-- `/albert usage` - Statistiques d'utilisation
-- `/albert me` - Informations de compte
+
+### /config debug
+Active/désactive les logs détaillés.
+- `/config debug on` - Active le mode debug
+- `/config debug off` - Désactive le mode debug
+
+### /config compress
+Configure la compression (voir `/help compress`)
+
+## Fichier de Configuration
+- Local (projet): `.agentichat/config.yaml`
+- Global (utilisateur): `~/.agentichat/config.yaml`
+
+Utilisez `nano ~/.agentichat/config.yaml` pour éditer.
+""",
+            "log": """
+# Logs
+
+## Commandes
+
+- `/log` ou `/log show` - Affiche les nouveaux logs
+- `/log fullshow` - Affiche tous les logs depuis le dernier clear
+- `/log clear` - Marque un point de clear (réinitialise la vue)
+- `/log search <texte>` - Recherche dans les logs avec contexte
+- `/log config` - Affiche la configuration actuelle
+- `/log config show <n>` - Définit le nombre de lignes pour show
+- `/log config search <avant> <après>` - Contexte pour search
+- `/log status` - Statistiques (taille, lignes, positions)
+
+## Codes Couleur
+- 🔴 **Rouge** - ERROR, CRITICAL
+- 🟡 **Jaune** - WARNING
+- ⚪ **Gris** - DEBUG
+- ⚪ **Blanc** - INFO
+
+## Fichier Log
+`.agentichat/agentichat.log` (dans le répertoire de travail)
+""",
+            "ollama": """
+# Commandes Ollama
+
+**Note:** Disponible uniquement avec le backend Ollama.
+
+## Commandes
+
+- `/ollama list` - Liste tous les modèles installés
+- `/ollama show <model>` - Informations détaillées d'un modèle
+- `/ollama run <model>` - Change de modèle Ollama
+- `/ollama ps` - Liste les modèles en cours d'exécution
+- `/ollama create <nom> <path>` - Crée un modèle depuis Modelfile
+- `/ollama cp <src> <dst>` - Copie un modèle
+- `/ollama rm <model>` - Supprime un modèle (avec confirmation)
+
+## Exemples
+```
+/ollama list                     # Voir les modèles disponibles
+/ollama run qwen2.5-coder:7b     # Basculer sur un modèle
+/ollama ps                       # Voir les modèles chargés
+```
+""",
+            "albert": """
+# Commandes Albert
+
+**Note:** Disponible uniquement avec le backend Albert (Etalab).
+
+## Commandes
+
+- `/albert list` - Liste tous les modèles disponibles
+- `/albert show <model>` - Informations détaillées d'un modèle
+- `/albert run <model>` - Change de modèle Albert
+- `/albert usage` - Statistiques d'utilisation (tokens, requêtes, coûts)
+- `/albert me` - Informations de compte (email, organisation, quota)
+
+## Tools Supplémentaires Albert
+Le backend Albert offre 4 tools additionnels :
+- `albert_search` - Recherche dans la base Etalab
+- `albert_ocr` - Extraction de texte depuis images
+- `albert_transcription` - Transcription audio vers texte
+- `albert_embeddings` - Génération d'embeddings
+
+## Exemples
+```
+/albert list                     # Voir les modèles
+/albert run AgentPublic/llama3   # Basculer sur un modèle
+/albert usage                    # Voir sa consommation
+```
+""",
+            "prompt": """
+# Personnalisation du Prompt
+
+## Commandes
+
 - `/prompt` - Affiche le prompt actuel
 - `/prompt list` - Liste les prompts prédéfinis
 - `/prompt <texte>` - Définit un prompt personnalisé
-- `/prompt toggle` - Active/désactive la barre d'info
+- `/prompt <nom>` - Utilise un prompt prédéfini
+- `/prompt reset` - Réinitialise au prompt par défaut (>)
+- `/prompt toggle` - Active/désactive la barre d'info du bas
 
-## Raccourcis clavier
-
-- `Enter` - Envoyer le message
-- `Shift+Enter` - Nouvelle ligne
-- `↑` / `↓` - Naviguer dans l'historique (sur première/dernière ligne)
-- `ESC` - Annuler la saisie en cours
-- `Ctrl+C` - Annuler la requête LLM en cours
-- `Ctrl+D` - Quitter
-
-## Tools disponibles
-
-Le LLM a accès aux tools suivants :
-
-### Fichiers
-- `list_files` - Liste les fichiers d'un répertoire
-- `read_file` - Lit le contenu d'un fichier
-- `write_file` - Crée ou modifie un fichier (confirmation requise)
-- `delete_file` - Supprime un fichier (confirmation requise)
-- `search_text` - Recherche textuelle dans les fichiers
-- `glob_search` - Cherche des fichiers par pattern glob (ex: `*.py`, `**/*.js`)
-
-### Répertoires
-- `create_directory` - Crée un nouveau répertoire
-- `delete_directory` - Supprime un répertoire (confirmation requise)
-- `move_file` - Déplace ou renomme un fichier/répertoire
-- `copy_file` - Copie un fichier ou répertoire
-
-### Web
-- `web_fetch` - Récupère le contenu d'une page web
-- `web_search` - Recherche sur le web avec DuckDuckGo
-
-### Système
-- `shell_exec` - Exécute une commande shell (confirmation requise)
-
-### Productivité
-- `todo_write` - Crée et gère une liste de tâches
-
-## Confirmations
-
-Certaines opérations nécessitent votre confirmation :
-- **Y** / **Yes** - Accepter cette opération (majuscules ou minuscules acceptées)
-- **A** / **All** - Accepter toutes les opérations suivantes
-- **N** / **No** - Refuser cette opération
-
-## Gestion des erreurs
-
-Si vous rencontrez une erreur ou atteignez la limite d'itérations :
-- **Vous pouvez toujours continuer** - Le programme ne se bloque pas
-- Simplifiez votre demande ou divisez-la en étapes plus petites
-- La limite d'itérations par défaut est visible avec `/config show`
-- L'historique de conversation est conservé, vous pouvez reformuler
+## Prompts Prédéfinis
+- `classic` → `>`
+- `lambda` → `λ`
+- `arrow` → `→`
+- `sharp` → `#`
+- `dollar` → `$`
 
 ## Exemples
-
 ```
-> Liste les fichiers Python dans le projet
-
-> Crée un fichier hello.py avec un Hello World
-
-> Cherche tous les imports de 'asyncio' dans le code
-
-> Exécute les tests avec pytest
+/prompt lambda          # Utilise λ comme prompt
+/prompt 🚀             # Prompt personnalisé emoji
+/prompt toggle         # Cache la barre d'info
 ```
-"""
-        self.console.print(Markdown(help_text))
+""",
+            "tools": """
+# Tools Disponibles
+
+Le LLM a accès à ces outils pour interagir avec votre système :
+
+## Fichiers (6 tools)
+- `list_files` - Liste fichiers/répertoires
+- `read_file` - Lit un fichier
+- `write_file` - Crée/modifie fichier (⚠ confirmation)
+- `delete_file` - Supprime fichier (⚠ confirmation)
+- `search_text` - Recherche textuelle (regex)
+- `glob_search` - Recherche par pattern (`*.py`, `src/**/*.js`)
+
+## Répertoires (4 tools)
+- `create_directory` - Crée un répertoire
+- `delete_directory` - Supprime répertoire (⚠ confirmation)
+- `move_file` - Déplace/renomme
+- `copy_file` - Copie fichier/répertoire
+
+## Web (2 tools)
+- `web_fetch` - Récupère contenu d'une URL
+- `web_search` - Recherche DuckDuckGo
+
+## Système (1 tool)
+- `shell_exec` - Exécute commande shell (⚠ confirmation)
+
+## Productivité (1 tool)
+- `todo_write` - Gère une liste de tâches
+
+## Albert Uniquement (4 tools)
+- `albert_search`, `albert_ocr`, `albert_transcription`, `albert_embeddings`
+
+## Confirmations
+⚠ Les operations destructives nécessitent confirmation (Y/N/A).
+""",
+            "shortcuts": """
+# Raccourcis Clavier
+
+## Édition
+- `Enter` - Envoyer le message
+- `Ctrl+J` ou `Alt+Enter` - Nouvelle ligne
+- `ESC` - Vider la saisie en cours
+
+## Navigation Historique
+- `↑` (flèche haut) - Message précédent (si sur première ligne)
+- `↓` (flèche bas) - Message suivant (si sur dernière ligne)
+
+## Contrôle
+- `Ctrl+C` - Annuler le traitement LLM en cours
+- `Ctrl+D` - Quitter l'application
+
+## Confirmations (Y/N/A)
+Lors d'opérations sensibles :
+- `Y` ou `y` - Accepter cette opération
+- `N` ou `n` - Refuser cette opération
+- `A` ou `a` - Accepter toutes les opérations suivantes
+
+## Barre d'Info (bas d'écran)
+Affiche : workspace, mode édition, debug, backend/modèle
+Toggle avec `/prompt toggle`
+""",
+        }
+
+        if topic in topics:
+            self.console.print(Markdown(topics[topic]))
+        else:
+            self.console.print(
+                f"[yellow]Topic '{topic}' inconnu.[/yellow]\n\n"
+                "[bold]Topics disponibles:[/bold]\n"
+                "  compress, config, log, ollama, albert, prompt, tools, shortcuts\n\n"
+                "[dim]Utilisez /help <topic> pour afficher l'aide détaillée.[/dim]\n"
+            )
 
     async def _handle_config_command(self, command: str) -> None:
         """Gère les commandes /config.
@@ -875,15 +1159,105 @@ Si vous rencontrez une erreur ou atteignez la limite d'itérations :
                     "[bold red]Erreur:[/bold red] Utilisation: /config debug [on|off]\n"
                 )
 
+        elif len(parts) >= 2 and parts[1] == "compress":
+            # Gestion de la configuration de compression
+            compress_config = self.config.compression
+
+            if len(parts) == 2:
+                # Afficher la configuration actuelle
+                self.console.print("\n[bold cyan]=== Configuration de Compression ===[/bold cyan]")
+                self.console.print(
+                    f"[dim]Auto-compression:[/dim] {'activée' if compress_config.auto_enabled else 'désactivée'}"
+                )
+                self.console.print(f"[dim]Seuil auto:[/dim] {compress_config.auto_threshold} messages")
+                self.console.print(f"[dim]Messages à garder:[/dim] {compress_config.auto_keep}")
+                self.console.print(
+                    f"[dim]Seuil d'avertissement:[/dim] {int(compress_config.warning_threshold * 100)}%"
+                )
+                if compress_config.max_messages:
+                    self.console.print(f"[dim]Limite max:[/dim] {compress_config.max_messages} messages")
+                else:
+                    self.console.print("[dim]Limite max:[/dim] illimitée")
+                self.console.print()
+                return
+
+            action = parts[2].lower()
+
+            if action == "--enable":
+                compress_config.auto_enabled = True
+                self.console.print("[bold green]✓[/bold green] Auto-compression activée\n")
+
+            elif action == "--disable":
+                compress_config.auto_enabled = False
+                self.console.print("[bold green]✓[/bold green] Auto-compression désactivée\n")
+
+            elif action == "--keep":
+                if len(parts) < 4:
+                    self.console.print(
+                        "[red]Erreur: --keep nécessite une valeur[/red]\n"
+                        "[dim]Usage: /config compress --keep <nombre>[/dim]\n"
+                    )
+                    return
+                try:
+                    keep_count = int(parts[3])
+                    if keep_count < 1:
+                        self.console.print("[red]Erreur: La valeur doit être >= 1[/red]\n")
+                        return
+                    compress_config.auto_keep = keep_count
+                    self.console.print(
+                        f"[bold green]✓[/bold green] Messages à garder: {keep_count}\n"
+                    )
+                except ValueError:
+                    self.console.print("[red]Erreur: Valeur invalide (nombre entier requis)[/red]\n")
+
+            elif action == "--auto":
+                if len(parts) < 5:
+                    self.console.print(
+                        "[red]Erreur: --auto nécessite deux valeurs[/red]\n"
+                        "[dim]Usage: /config compress --auto <seuil> <à_garder>[/dim]\n"
+                        "[dim]Exemple: /config compress --auto 20 5 (compresse auto à 20 msg, garde 5)[/dim]\n"
+                    )
+                    return
+                try:
+                    threshold = int(parts[3])
+                    keep = int(parts[4])
+                    if threshold < 1 or keep < 1:
+                        self.console.print("[red]Erreur: Les valeurs doivent être >= 1[/red]\n")
+                        return
+                    if keep >= threshold:
+                        self.console.print("[red]Erreur: Le nombre à garder doit être < seuil[/red]\n")
+                        return
+                    compress_config.auto_threshold = threshold
+                    compress_config.auto_keep = keep
+                    compress_config.auto_enabled = True
+                    self.console.print(
+                        f"[bold green]✓[/bold green] Auto-compression configurée: "
+                        f"seuil={threshold}, garde={keep}\n"
+                    )
+                except ValueError:
+                    self.console.print("[red]Erreur: Valeurs invalides (nombres entiers requis)[/red]\n")
+
+            else:
+                self.console.print(
+                    f"[red]Erreur: Option inconnue '{action}'[/red]\n"
+                    "[bold yellow]Options disponibles:[/bold yellow]\n"
+                    "  /config compress                    - Affiche la configuration\n"
+                    "  /config compress --enable           - Active l'auto-compression\n"
+                    "  /config compress --disable          - Désactive l'auto-compression\n"
+                    "  /config compress --keep <N>         - Définit le nombre de messages à garder\n"
+                    "  /config compress --auto <seuil> <N> - Configure l'auto-compression\n"
+                )
+
         else:
             # Commande invalide
             self.console.print(
                 "[bold yellow]Commandes /config disponibles:[/bold yellow]\n"
-                "  /config show              - Affiche la configuration actuelle\n"
-                "  /config backend list      - Liste les backends disponibles\n"
-                "  /config backend <nom>     - Change de backend\n"
-                "  /config debug on          - Active le mode debug\n"
-                "  /config debug off         - Désactive le mode debug\n"
+                "  /config show                        - Affiche la configuration actuelle\n"
+                "  /config backend list                - Liste les backends disponibles\n"
+                "  /config backend <nom>               - Change de backend\n"
+                "  /config debug on                    - Active le mode debug\n"
+                "  /config debug off                   - Désactive le mode debug\n"
+                "  /config compress                    - Configure la compression de conversation\n"
             )
 
     async def _switch_backend(self, backend_name: str) -> None:
@@ -1447,7 +1821,9 @@ Si vous rencontrez une erreur ou atteignez la limite d'itérations :
                 )
 
         except Exception as e:
-            self.console.print(f"\n[bold red]Erreur:[/bold red] {e}\n")
+            # Échapper le message d'erreur pour éviter les conflits de markup
+            error_display = str(e).replace("[", "\\[").replace("]", "\\]")
+            self.console.print(f"\n[bold red]Erreur:[/bold red] {error_display}\n")
             logger.error(f"Ollama command error: {e}", exc_info=True)
 
     async def _handle_albert_command(self, command: str) -> None:
@@ -1621,7 +1997,9 @@ Si vous rencontrez une erreur ou atteignez la limite d'itérations :
                 )
 
         except Exception as e:
-            self.console.print(f"\n[bold red]Erreur:[/bold red] {e}\n")
+            # Échapper le message d'erreur pour éviter les conflits de markup
+            error_display = str(e).replace("[", "\\[").replace("]", "\\]")
+            self.console.print(f"\n[bold red]Erreur:[/bold red] {error_display}\n")
             logger.error(f"Albert command error: {e}", exc_info=True)
 
     def _handle_prompt_command(self, command: str) -> None:
@@ -1681,6 +2059,278 @@ Si vous rencontrez une erreur ou atteignez la limite d'itérations :
                 self.console.print(
                     f"[bold green]✓[/bold green] Prompt personnalisé: {self.prompt_manager.prompt_text}\n"
                 )
+
+    def _handle_model_command(self) -> None:
+        """Affiche le backend actif et le modèle utilisé."""
+        self.console.print("\n[bold cyan]=== Modèle actif ===[/bold cyan]")
+        self.console.print(f"[dim]Backend:[/dim] [bold]{self.config.default_backend}[/bold]")
+
+        if self.backend:
+            backend_config = self.config.backends[self.config.default_backend]
+            self.console.print(f"[dim]Modèle:[/dim] [bold green]{backend_config.model}[/bold green]")
+            self.console.print(f"[dim]URL:[/dim] {backend_config.url}")
+            self.console.print(f"[dim]Temperature:[/dim] {backend_config.temperature}")
+            self.console.print(f"[dim]Max tokens:[/dim] {backend_config.max_tokens}")
+            self.console.print(f"[dim]Timeout:[/dim] {backend_config.timeout}s")
+        else:
+            self.console.print("[yellow]Aucun backend initialisé[/yellow]")
+
+        self.console.print()
+
+    async def _handle_info_command(self) -> None:
+        """Affiche les informations sur la session et la conversation en cours."""
+        stats = await self.db.get_session_stats()
+
+        if not stats:
+            self.console.print("[yellow]Aucune session active[/yellow]\n")
+            return
+
+        from datetime import datetime
+
+        self.console.print("\n[bold cyan]=== Informations de Session ===")
+
+        # Informations générales
+        created = datetime.fromtimestamp(stats["created_at"]).strftime("%Y-%m-%d %H:%M:%S")
+        updated = datetime.fromtimestamp(stats["updated_at"]).strftime("%Y-%m-%d %H:%M:%S")
+
+        self.console.print(f"[dim]Session ID:[/dim] {stats['session_id'][:8]}...")
+        self.console.print(f"[dim]Backend:[/dim] {stats['backend']}")
+        self.console.print(f"[dim]Modèle:[/dim] {stats['model']}")
+        self.console.print(f"[dim]Créée:[/dim] {created}")
+        self.console.print(f"[dim]Mise à jour:[/dim] {updated}")
+
+        # Statistiques des messages
+        self.console.print("\n[bold cyan]=== Statistiques de Conversation ===[/bold cyan]")
+        self.console.print(f"[dim]Messages totaux:[/dim] [bold]{stats['message_count']}[/bold]")
+        self.console.print(f"  • Utilisateur: {stats['user_messages']}")
+        self.console.print(f"  • Assistant: {stats['assistant_messages']}")
+
+        # Statistiques de taille
+        total_chars = stats["total_chars"]
+        total_kb = total_chars / 1024
+        self.console.print(f"[dim]Taille totale:[/dim] [bold]{total_chars:,}[/bold] caractères ({total_kb:.1f} KB)")
+
+        # Tokens (si disponible)
+        if stats["total_tokens"] and stats["total_tokens"] > 0:
+            total_tokens = stats["total_tokens"]
+            self.console.print(f"[dim]Tokens utilisés:[/dim] [bold]{total_tokens:,}[/bold]")
+
+            # Estimation du coût (pour info, avec Albert)
+            if stats["backend"] == "albert":
+                # Tarif estimé Albert (à ajuster selon la réalité)
+                cost_estimate = (total_tokens / 1_000_000) * 0.5  # ~0.5€/M tokens
+                self.console.print(f"[dim]Coût estimé:[/dim] ~{cost_estimate:.4f}€")
+
+        # Messages en mémoire vs base de données
+        in_memory = len(self.messages)
+        self.console.print(f"\n[dim]En mémoire:[/dim] {in_memory} messages")
+        self.console.print(f"[dim]En base:[/dim] {stats['message_count']} messages")
+
+        # Compressions
+        if stats["compression_count"] > 0:
+            self.console.print(f"[dim]Compressions effectuées:[/dim] {stats['compression_count']}")
+
+        self.console.print()
+
+    async def _handle_compress_command(self, command: str = "/compress") -> None:
+        """Compresse la conversation en la résumant avec le LLM.
+
+        Args:
+            command: Commande complète (ex: "/compress", "/compress --max 10", "/compress --keep 5")
+        """
+        if not self.backend or not self.agent:
+            self.console.print("[yellow]Backend non initialisé[/yellow]\n")
+            return
+
+        # Parser les options
+        parts = command.split()
+        keep_messages: int | None = None  # Nombre de messages à garder
+
+        # Analyser les options
+        i = 1  # Commencer après "/compress"
+        while i < len(parts):
+            arg = parts[i]
+            if arg in ["--max", "-m", "--keep"]:
+                # Récupérer la valeur
+                if i + 1 >= len(parts):
+                    self.console.print(f"[red]Erreur: {arg} nécessite une valeur[/red]\n")
+                    self.console.print("[dim]Usage: /compress [--max N | -m N | --keep N][/dim]\n")
+                    return
+                try:
+                    keep_messages = int(parts[i + 1])
+                    if keep_messages < 1:
+                        self.console.print("[red]Erreur: La valeur doit être >= 1[/red]\n")
+                        return
+                    i += 2
+                except ValueError:
+                    self.console.print(f"[red]Erreur: {arg} nécessite un nombre entier[/red]\n")
+                    return
+            else:
+                self.console.print(f"[red]Erreur: Option inconnue '{arg}'[/red]\n")
+                self.console.print("[dim]Usage: /compress [--max N | -m N | --keep N][/dim]\n")
+                return
+
+        # Vérifier qu'il y a assez de messages
+        if len(self.messages) < 4:
+            self.console.print(
+                "[yellow]Pas assez de messages à compresser (minimum 4)[/yellow]\n"
+            )
+            return
+
+        # Si keep_messages est spécifié et >= nombre de messages actuels, pas besoin de compresser
+        if keep_messages and keep_messages >= len(self.messages):
+            self.console.print(
+                f"[yellow]Déjà {len(self.messages)} messages (≤ {keep_messages}), compression inutile[/yellow]\n"
+            )
+            return
+
+        self.console.print(
+            "\n[bold yellow]⚡ Compression de la conversation en cours...[/bold yellow]"
+        )
+        if keep_messages:
+            self.console.print(f"[dim]Résumé des anciens messages, conservation des {keep_messages} derniers[/dim]\n")
+        else:
+            self.console.print("[dim]Le LLM va résumer toute la conversation pour économiser des tokens[/dim]\n")
+
+        # Statistiques avant compression
+        original_count = len(self.messages)
+        original_chars = sum(len(msg.content or "") for msg in self.messages)
+
+        # Déterminer quels messages compresser
+        if keep_messages and keep_messages < len(self.messages):
+            # Garder les N derniers, compresser les autres
+            messages_to_compress = self.messages[:-keep_messages]
+            messages_to_keep = self.messages[-keep_messages:]
+        else:
+            # Compresser tous les messages
+            messages_to_compress = self.messages
+            messages_to_keep = []
+
+        # Créer un prompt pour le résumé
+        conversation_text = []
+        for msg in messages_to_compress:
+            role = "Utilisateur" if msg.role == "user" else "Assistant"
+            conversation_text.append(f"{role}: {msg.content}")
+
+        summary_prompt = f"""Résume cette conversation de manière concise mais complète.
+Conserve tous les points importants, décisions, et contexte nécessaire.
+Le résumé sera utilisé comme contexte pour continuer la conversation.
+
+Conversation à résumer:
+{chr(10).join(conversation_text)}
+
+Résumé structuré:"""
+
+        try:
+            # Demander le résumé au LLM
+            summary_message = Message(role="user", content=summary_prompt)
+            response = await self.backend.chat(
+                messages=[summary_message],
+                tools=None,  # Pas besoin de tools pour un résumé
+            )
+
+            summary_content = response.content or ""
+
+            if not summary_content:
+                self.console.print("[red]Erreur: Le LLM n'a pas généré de résumé[/red]\n")
+                return
+
+            # Créer un message système avec le résumé
+            compressed_message = Message(
+                role="system",
+                content=f"[Résumé de la conversation précédente]\n\n{summary_content}\n\n[Fin du résumé - La conversation continue normalement]",
+            )
+
+            # Remplacer les messages par: résumé + messages à garder
+            self.messages = [compressed_message] + messages_to_keep
+
+            # Statistiques après compression
+            compressed_count = len(self.messages)
+            compressed_chars = sum(len(msg.content or "") for msg in self.messages)
+
+            # Sauvegarder la compression dans la DB
+            await self.db.save_compression(
+                original_count=original_count,
+                compressed_count=compressed_count,
+                summary=summary_content,
+            )
+
+            # Afficher les résultats
+            self.console.print("[bold green]✓ Compression réussie ![/bold green]\n")
+            self.console.print("[bold cyan]=== Résultat de la Compression ===[/bold cyan]")
+            self.console.print(
+                f"[dim]Messages:[/dim] {original_count} → [bold green]{compressed_count}[/bold green] "
+                f"([bold]-{original_count - compressed_count}[/bold], "
+                f"{((original_count - compressed_count) / original_count * 100):.1f}%)"
+            )
+            self.console.print(
+                f"[dim]Caractères:[/dim] {original_chars:,} → [bold green]{compressed_chars:,}[/bold green] "
+                f"([bold]-{original_chars - compressed_chars:,}[/bold], "
+                f"{((original_chars - compressed_chars) / original_chars * 100):.1f}%)"
+            )
+            if messages_to_keep:
+                self.console.print(
+                    f"[dim]Messages conservés:[/dim] {len(messages_to_keep)} derniers messages"
+                )
+            self.console.print(
+                f"\n[dim][italic]Le résumé est maintenant en mémoire. "
+                f"Vous pouvez continuer la conversation normalement.[/italic][/dim]\n"
+            )
+
+        except Exception as e:
+            # Échapper le message d'erreur pour éviter les conflits de markup
+            error_display = str(e).replace("[", "\\[").replace("]", "\\]")
+            self.console.print(f"[red]Erreur lors de la compression: {error_display}[/red]\n")
+            logger.error(f"Compression error: {e}", exc_info=True)
+
+    async def _handle_shell_command(self, command: str) -> None:
+        """Exécute directement une commande shell.
+
+        Args:
+            command: Commande complète (ex: "/! ls -l", "/! pwd")
+        """
+        # Extraire la commande après "/!"
+        shell_cmd = command[2:].strip()
+
+        if not shell_cmd:
+            self.console.print("[yellow]Usage:[/yellow] /! <commande_shell>")
+            self.console.print("[dim]Exemple: /! ls -l[/dim]\n")
+            return
+
+        self.console.print(f"\n[dim]$ {shell_cmd}[/dim]")
+
+        try:
+            import subprocess
+
+            # Exécuter la commande
+            result = subprocess.run(
+                shell_cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            # Afficher la sortie
+            if result.stdout:
+                self.console.print(result.stdout)
+
+            # Afficher les erreurs en rouge
+            if result.stderr:
+                self.console.print(f"[red]{result.stderr}[/red]")
+
+            # Afficher le code de retour si différent de 0
+            if result.returncode != 0:
+                self.console.print(f"[yellow]Code de retour: {result.returncode}[/yellow]")
+
+        except subprocess.TimeoutExpired:
+            self.console.print("[red]Erreur: Timeout (30s dépassé)[/red]\n")
+        except Exception as e:
+            # Échapper le message d'erreur pour éviter les conflits de markup
+            error_display = str(e).replace("[", "\\[").replace("]", "\\]")
+            self.console.print(f"[red]Erreur: {error_display}[/red]\n")
+
+        self.console.print()
 
 
 async def run_chat(config_path: Path | None = None) -> None:

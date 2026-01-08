@@ -179,6 +179,33 @@ class AlbertBackend(Backend):
                 except json.JSONDecodeError as e:
                     logger.debug(f"Failed to parse direct JSON: {json_str[:100]}... Error: {e}")
 
+        # Format 4: Format XML de Qwen3 - <tool_call><function=...><parameter=...>
+        # Exemple: <tool_call><function=list_files><parameter=path>.</parameter></function></tool_call>
+        xml_pattern = r'<tool_call>\s*<function=(\w+)>(.*?)</function>\s*</tool_call>'
+        xml_matches = re.finditer(xml_pattern, content, re.DOTALL)
+
+        for match in xml_matches:
+            tool_name = match.group(1)
+            params_block = match.group(2)
+
+            # Parser les paramètres - format: <parameter=name>value</parameter>
+            arguments = {}
+            param_pattern = r'<parameter=(\w+)>(.*?)</parameter>'
+            param_matches = re.finditer(param_pattern, params_block, re.DOTALL)
+
+            for param_match in param_matches:
+                param_name = param_match.group(1)
+                param_value = param_match.group(2).strip()
+                arguments[param_name] = param_value
+
+            tool_call = ToolCall(
+                id=str(uuid.uuid4()),
+                name=tool_name,
+                arguments=arguments,
+            )
+            tool_calls.append(tool_call)
+            logger.info(f"Extracted tool call from XML format (Qwen3): {tool_name}")
+
         return tool_calls if tool_calls else None
 
     def _get_headers(self) -> dict[str, str]:

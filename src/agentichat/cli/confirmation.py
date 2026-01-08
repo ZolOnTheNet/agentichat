@@ -199,7 +199,7 @@ class ConfirmationManager:
 
 [yellow]A[/yellow] / [yellow]All[/yellow]
     Accepte cette opération ET toutes les suivantes
-    (active le mode passthrough jusqu'à la fin de la requête)
+    (active le mode passthrough pour toute la session)
 
 [red]N[/red] / [red]No[/red]
     Refuse cette opération
