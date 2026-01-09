@@ -36,6 +36,7 @@ test_*.py
 htmlcov/
 .tox/
 .nox/
+test.agentichat/bestPDF2txt/docs
 
 # IDE
 .vscode/
