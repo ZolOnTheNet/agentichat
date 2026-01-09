@@ -75,9 +75,13 @@ class ChatApp:
         db_path = config.data_dir / "agentichat.db"
         self.db = DatabaseManager(db_path)
 
-        # Créer l'éditeur avec historique ET bottom toolbar
+        # Créer l'éditeur avec historique, bottom toolbar ET callback Shift+Tab
         history_file = config.data_dir / "history.txt"
-        self.editor = create_editor(history_file=history_file, bottom_toolbar=self._get_bottom_toolbar)
+        self.editor = create_editor(
+            history_file=history_file,
+            bottom_toolbar=self._get_bottom_toolbar,
+            on_shift_tab=self._cycle_confirmation_mode
+        )
 
         # Créer le visualiseur de logs
         log_file = config.data_dir / "agentichat.log"
@@ -752,6 +756,23 @@ class ChatApp:
             self.console.print("[dim]→ Vous pouvez continuer avec une nouvelle commande[/dim]\n")
             logger.error(f"Error in agent loop: {e}", exc_info=True)
 
+    def _cycle_confirmation_mode(self) -> None:
+        """Cycle les modes de confirmation et affiche un message."""
+        if not self.confirmation_manager:
+            return
+
+        # Sauvegarder l'ancien mode pour affichage
+        old_mode = self.confirmation_manager.get_mode_display()
+
+        # Cycler
+        self.confirmation_manager.cycle_mode()
+
+        # Nouveau mode
+        new_mode = self.confirmation_manager.get_mode_display()
+
+        # Afficher le changement (brief, sur une ligne)
+        self.console.print(f"[dim]Mode confirmation: {old_mode} → [bold]{new_mode}[/bold][/dim]")
+
     def _get_bottom_toolbar(self) -> str:
         """Retourne le texte de la barre de statut en bas (bottom toolbar).
 
@@ -774,6 +795,11 @@ class ChatApp:
         # Debug
         debug_status = "on" if self.debug_mode else "off"
         parts.append(f"debug:{debug_status}")
+
+        # Mode de confirmation
+        if self.confirmation_manager:
+            conf_mode = self.confirmation_manager.get_mode_display()
+            parts.append(f"Conf:{conf_mode}")
 
         # Backend/Modèle
         if self.backend:
@@ -1052,6 +1078,7 @@ Le LLM a accès à ces outils pour interagir avec votre système :
 - `Enter` - Envoyer le message
 - `Ctrl+J` ou `Alt+Enter` - Nouvelle ligne
 - `ESC` - Vider la saisie en cours
+- `Shift+Tab` - Cycler les modes de confirmation (Ask/Auto/Force)
 
 ## Navigation Historique
 - `↑` (flèche haut) - Message précédent (si sur première ligne)
@@ -1061,14 +1088,19 @@ Le LLM a accès à ces outils pour interagir avec votre système :
 - `Ctrl+C` - Annuler le traitement LLM en cours
 - `Ctrl+D` - Quitter l'application
 
-## Confirmations (Y/N/A)
-Lors d'opérations sensibles :
+## Modes de Confirmation
+Trois modes disponibles (cycle avec `Shift+Tab`) :
+- **Ask** - Demander confirmation à chaque fois (défaut)
+- **Auto** - Accepter automatiquement (activé après "A")
+- **Force** - Toujours accepter sans demander
+
+Lors d'une confirmation (mode Ask) :
 - `Y` ou `y` - Accepter cette opération
 - `N` ou `n` - Refuser cette opération
-- `A` ou `a` - Accepter toutes les opérations suivantes
+- `A` ou `a` - Passer en mode Auto
 
 ## Barre d'Info (bas d'écran)
-Affiche : workspace, mode édition, debug, backend/modèle
+Affiche : workspace, debug, **Conf:mode**, backend/modèle
 Toggle avec `/prompt toggle`
 """,
         }

@@ -1,15 +1,510 @@
 --- MÉTADONNÉES DU DOCUMENT ---
+--- PAGE 1 ---
+ 
+PC Gonflé Angelique + stat+kb+ecran27
+Page  of 
+1
+5
+DEVIS CLIENT 9307376
+Les renseignements contenus dans ce devis sont 
+confidentiels et restent la propriété exclusive de HP. Ne pas 
+diffuser.
+HP FRANCE SAS
+14 RUE DE LA VERRERIE
+CS 40012
+92197 MEUDON CEDEX, France
+http://www.hp.com/fr
+RCS Nanterre 448 694 133 - A.P.E : 4651Z
+no TVA France : FR25448694133
+Informations et détails
+ 
+Nom de l'organisation: MATINFO UNIVERSITE 
+CLAUDE BERNARD LYON 1
+ 
+Nom du catalogue: MATINFO 6 UCBL LOT 2
+ 
+Créé par: olivier.garrigues@univ-lyon1.fr
+ 
+Identifiant d'agent partenaire:
+ 
+Nom: Olivier GARRIGUES
+ 
+Envoyer: olivier.garrigues@univ-lyon1.fr
+ 
+Téléphone: 0472431869
+ 
+Notification par e-mail: olivier.garrigues@univ-
+lyon1.fr
+ 
+Créé(s): 27 octobre 2025 16:07:10
+ 
+Date d'expiration: 26 novembre 2025 16:05:35
+Mode de paiement: Bon de commande
+ 
+Montant total du devis: 1 305,34 EUR
+ 
+No du marche 25095F
+ 
+NomClient 1000J UNIVERSITE LYON 1 
+CLAUDE B
+Informations concernant la facturation
+ 0170164528
+ID OM:
+ 
+Société: UNIVERSITE CLAUDE BERNARD 
+LYON 1
+Adresse:
+43 boulevard du 11 novembre 1918
+ 
+Ville : Villeurbanne Cedex
+ 
+Département/Province:
+ 
+Code postal: 69622
+ 
+Pays: FR
+ 
+À l'attention de: Nadia CHAPEL
+ 
+Envoyer: nadia.chapel@univ-lyon1.fr
+ 
+Téléphone: 472431845
+ 
+Fax:
+Informations sur la livraison
+ 
+Société: LAGEPP Université CBL1
+Adresse:
+Ecole CPE, Batiement G
+46 avenue Niels Bohr
+La DOUA
+ 
+Ville: villeurbanne
+ 
+Département/Province:
+ 
+Code postal: 69100
+ 
+Pays: FR
+ 
+À l'attention de: Olivier Garrigues
+ 
+Envoyer: olivier.garrigues@univ-lyon1.fr
+ 
+Téléphone: 0472431885
+ 
+Fax:
+ 
+Date de livraison requise:
+Options d'expédition:
+ 
+Mode d'expédition:
+Commentaires: 
+Mode de transport: Expédition standard
+Récapitulatif du devis
+N° de produit
+Description du produit
+MFG# :
+Qté
+Ecocontribu
+tions
+Prix de 
+base
+Prix de 
+passage
+Prix 
+unitaire
+Prix total
+CO2e
+HP EliteBook 8 G1i 14 AI
+CAT5_Configuration n°
+2B_8_G1i_14_AI-WUXGA-
+300n_U5-16GB-512GB
+ 
+Identifiant du kit: 54550478
+Modèle de références: 
+54550478
+Configuration: 54637602
+1
+3,32 EUR
+508,00 
+EUR
+306,00 
+EUR
+814,00 
+ 
+EUR
+814,00 EUR
+171,31 kg
+AP6J2AV
+PC portable HP IDS UMA 
+Ultra 5 225H 8 14 pouces G1i 
+(modèle de base)
+1
++ 20,00 
+EUR
+171,31 kg
+8C9M7AV
+Aucune restriction concernant 
+le pays d’origine
+1
+1Y629AV
+Étiquette électronique Energy 
+1
++ 0,00 
+
+--- PAGE 2 ---
+ 
+PC Gonflé Angelique + stat+kb+ecran27
+Page  of 
+2
+5
+DEVIS CLIENT 9307376
+Les renseignements contenus dans ce devis sont 
+confidentiels et restent la propriété exclusive de HP. Ne pas 
+diffuser.
+N° de produit
+Description du produit
+MFG# :
+Qté
+Ecocontribu
+tions
+Prix de 
+base
+Prix de 
+passage
+Prix 
+unitaire
+Prix total
+CO2e
+Star (EStar)
+EUR
+AP6R7AV
+Windows 11 Pro 64
+1
++ 112,00 
+EUR
+4SS11AV#ABF
+OSLOC
+1
+AP6L1AV
+Dual AryMic 5MP USB2 
+WFOV Integrated Camera
+1
+AP6M5AV
+14.0 inch AG WUXGA 
+(1920x1200) LED UWVA 300 
+f5MP 60Hz bnt LCD Panel
+1
+AP6S7AV
+32GB (1x32GB) DDR5 5600 
+SODIMM Memory
+1
++ 82,00 
+EUR
+AP6V1AV
+512GB PCIe NVMe Value 
+Solid State Drive
+1
+AP6K9AV
+Glacier Silver Aluminum ID
+1
+AP6P0AV
+No Near Field Communication 
+(No NFC)
+1
+AP6V9AV
+Intel AX211 Wi-Fi 6E 
++Bluetooth 5.3 WW WLAN
+1
+AP6P4AV
+No WWAN
+1
+AP6N9AV
+No Fingerprint Sensor
+1
+AP6P1AV
+No SmartCard Reader
+1
+AP6J1AV
+MC Long Life 62Whr Fast 
+Charge 3 cell Battery
+1
+AP6H2AV
+65 Watt nPFC USB-C Straight 
+AC Adapter
+1
+AP9C9AV#ABF Clickpad Backlit spill-resistant 
+Premium Keyboard
+1
+AP6W6AV#ABF Country Localization
+1
+68V61AV#ABF
+C5 1.0m Sticker Conventional 
+Power Cord
+1
+AP9D3AV#ABB 1/1/0 Warranty
+1
+791T2AV
+Support Wi-Fi UEFI pré-
+initialisation
+1
++ 0,00 
+EUR
+4N735AV
+HP Tamper Lock
+1
+X9H42AV
+Sans prise en charge vPro 
+AMT
+1
+AP6P7AV
+Standard Packaging
+1
+3AH72AV
+EU RED Pictogram Label
+1
+
+--- PAGE 3 ---
+ 
+PC Gonflé Angelique + stat+kb+ecran27
+Page  of 
+3
+5
+DEVIS CLIENT 9307376
+Les renseignements contenus dans ce devis sont 
+confidentiels et restent la propriété exclusive de HP. Ne pas 
+diffuser.
+N° de produit
+Description du produit
+MFG# :
+Qté
+Ecocontribu
+tions
+Prix de 
+base
+Prix de 
+passage
+Prix 
+unitaire
+Prix total
+CO2e
+3E755AV
+Étiquette électronique de 
+certification TCO
+1
++ 0,00 
+EUR
+A19B1AV
+Core Ultra 5 sz3 G16 Label
+1
+AY170AV
+HP Operations Service
+1
+UJ8P6B
+HP 9Y Matinfo 6 BF NMD NB 
+Supp
+1
++ 92,00 
+EUR
+U80M4E
+Service HP Priority 
+Management 5 ans pour 
+produits PC PPS - Plus de 
+5000 places
+1
+W9G27AA
+Services HP Inside Delivery 
+pour ordinateur portable
+1
+HP Docking Station USB-C G5
+HP Docking Station USB-C G5
+ 
+Identifiant du kit: 1067049
+1
+0,22 EUR
+107,00 
+ 
+EUR
+107,00 EUR
+2,18 kg
+5TW10AA#ABB Station d'accueil HP USB-C 
+G5 EMEA-INTL English Loc-
+Euro plug
+1
+2,18 kg
+UJ8L4B
+HP 7Y MATINFO6 BF NBD 
+Doc Supp
+1
+AX2Y7AA#ABF HP 225 Wired MSE and KB 
+G2 FR
+HP 225 Wired MSE and KB 
+G2 FR
+1
+0,11 EUR
+ 
+18,00 EUR 18,00 EUR
+HP S3 Pro 327ph FHD MNTR
+HP S3 Pro 327ph FHD MNTR
+ 
+Identifiant du kit: 1067104
+1
+2,13 EUR
+143,00 
+ 
+EUR
+143,00 EUR
+B0CG8UT#ABB HP S3 Pro 327ph FHD MNTR 
+EURO
+ - IPS; 
+Technologie de dalle
+LCD
+ - Height 
+Fonctions d'affichage
+adjustable,Tilt
+ - FHD (1920 
+Résolution native
+x 1080)
+ - 1000:1
+Rapport de contraste
+ - 250 nits
+Luminosité
+ - 
+Contenu de l’emballage
+Poster de configuration rapide,
+Carte de garantie,Câble HDMI,
+Écran,Cordon d’alimentation 
+secteur
+ - Garantie 
+Garantie fabricant
+limitée HP de trois ans
+1
+
+--- PAGE 4 ---
+ 
+PC Gonflé Angelique + stat+kb+ecran27
+Page  of 
+4
+5
+DEVIS CLIENT 9307376
+Les renseignements contenus dans ce devis sont 
+confidentiels et restent la propriété exclusive de HP. Ne pas 
+diffuser.
+N° de produit
+Description du produit
+MFG# :
+Qté
+Ecocontribu
+tions
+Prix de 
+base
+Prix de 
+passage
+Prix 
+unitaire
+Prix total
+CO2e
+UJ8L2B
+HP 7Y MATINFO6 BF NBD 
+Display Supp
+1
+ 
+Sous-total
+1 082,00 EUR
+Ecocontributions
+5,78 EUR
+Prix total HT
+1 087,78 EUR
+TVA
+217,56 EUR
+Total
+1 305,34 EUR
+   
+Fabrication - CO2 eq
+155,31kg
+Consommation 
+énergétique - CO2 eq
+ 2,07kg
+Transport - C02 eq
+16,11kg
+Total des émissions de 
+CO2
+173,49kg
+Tarifs
+Le prix du produit tient compte du coût de la prise en charge de la batterie usagée.
+Le coût de prise en charge de la batterie usagée est inclus dans le prix final des produits et représente la contribution financière du producteur pour couvrir les frais décrits à l’article 56
+(4) du règlement (UE) 2023/1542 concernant les batteries et batteries usagées.
+Les points de collecte où vous pouvez déposer gratuitement vos batteries usagées sont indiqués 
+.
+ici
+Le taux de la taxe sur la valeur ajoutée est fixé à 20 %.
+https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026950057
+Les renseignements contenus dans ce devis sont confidentiels et restent la propriété exclusive de HP. Ne pas diffuser.
+Ce devis émis par l'entité légale HP en charge de la livraison de la commande ne s'applique pas dans le cas où vous feriez financer votre commande par une société tierce. Dans ce 
+cas, la société de financement choisie par vos soins deviendrait le fournisseur des produits et services HP. Les conditions propres au financement par une société tierce seront mises à 
+jour sur vos commandes d'achat conformément à l'accord conclu entre vous et la société tierce de financement. Pour toute information relative au financement, merci de contacter 
+votre société de financement.
+Le présent devis est émis au titre des conditions contractuelles de vente de HP France ci- jointes:
+https://h20195.www2.hp.com/V2/GetPDF.aspx/4AA7-9371FRFR.pdf
+HP France est soumis à la réglementation relative aux déchets d'équipements électriques (DEEE) et à ce titre soumis aux exigences du décret n° 2014-928 du 19 août 2014 relatif aux 
+DEEE. Depuis le 1er janvier 2015, HP applique une Eco-Contribution sur les produits ménagers selon la définition prévue à l'article R.543-173 du Code de l'Environnement.
+Vous trouverez régulièrement mise à jour la liste des Eco-contributions par référence concernée dans ce fichier:
+http://h41087.www4.hp.com/hp-information/environment/productlist.xls
+Notes:
+(1)Pour les produits relevant du régime de la DEEE sur les produits éco-contributions professionnelles, il n'y a pas d'Eco-contribution à indiquer dans la facture.
+"Les écocontributions relatives aux Déchets équipements électriques et électroniques vont augmenter de façon importante et seront reportées sur vos factures à compter du 1er janvier 
+2025"
+https://www.ecologic-france.com/images/medias/document/26502/Bareme-EEE-Menager-01-01-2025-FR2.pdf 
+"Eco-taxes on waste electrical and electronic equipment will increase significantly and will be passed on to your bills from January 1, 2025."
+ 
+(2)Le montant des éco-contributions collectées par HP France est reversé à l'éco-organisme agréé DEEE ménagers, unique responsable des évolutions de son barème.
+
+--- PAGE 5 ---
+ 
+PC Gonflé Angelique + stat+kb+ecran27
+Page  of 
+5
+5
+DEVIS CLIENT 9307376
+Les renseignements contenus dans ce devis sont 
+confidentiels et restent la propriété exclusive de HP. Ne pas 
+diffuser.
+Développement durable
+L'équivalent en dioxyde de carbone (CO2e) est une mesure standard utilisée par le Groupe d'experts 
+intergouvernemental sur l'évolution du climat (GIEC) des Nations unies. Elle sert à comparer les émissions 
+de divers gaz à effet de serre (GES) sur la base de leur potentiel de réchauffement planétaire sur une 
+échelle de temps donnée, afin d'exprimer en un seul chiffre une empreinte carbone constituée de différents 
+GES.
+ 
+Grâce à une méthodologie d'analyse du cycle de vie (ACV) vérifiée par un tiers indépendant et conforme 
+aux normes ISO 14040 et ISO 14044, HP est en mesure d'estimer l'empreinte carbone de ses produits. 
+Cette estimation comprend les émissions de la chaîne de valeur complète de nos produits, de l'extraction 
+des matières premières à la fabrication, en passant par la distribution du produit, son utilisation et sa fin de 
+vie. Les hypothèses suivantes sont utilisées :
+De la fabrication jusqu'à la fin de son cycle de vie, le produit est utilisé dans une configuration 
+standard ; la fin de service est actuellement incluse dans la valeur de fabrication.
+L'utilisation du produit est basée sur des données calculées à partir des résultats d'essais pour des 
+configurations spécifiques et de la méthodologie ENERGY STAR® ; cela suppose que le produit est 
+utilisé dans le pays et/ou la région du compte du client.
+Les valeurs de transport sont basées sur le pays et/ou la région du compte du client.
+Les estimations de l’empreinte carbone sont basées sur l'ACV, et non sur les données d'empreinte réelle 
+fournies par le fabricant du composant. Les estimations de l’empreinte carbone du produit peuvent différer 
+lorsque les composants du produit et l’adresse de livraison sont mises à jour par le client. Toutes les 
+estimations d’émission de carbone sont incertains, ce qui résulte en grande partie des limitations et de la 
+qualité des données. Pour contrebalancer cette incertitude, HP a développé des outils spécifiques qui 
+utilisent une combinaison de processus et de données sur les produits HP, ainsi que des données d’
+évaluation du cycle de vie de haute qualité. HP s’efforce de fournir les résultats les plus précis en matière d’
+impact environnemental, mais l’incertitude ne pourra jamais vraiment disparaître. Les résultats doivent être 
+considérés en conséquence.
 
 ModDate: D:20251027140804Z
-
 CreationDate: D:20251027140804Z
-
 Producer: iText 2.1.7 by 1T3XT
 
-
-
 --- PAGE 1 ---
-
+--- TABLEAU 1 ---
+                           HP FRANCE SAS
 Page 1 of 5
 PC Gonflé Angelique + stat+kb+ecran27 DEVIS CLIENT 9307376
 Les renseignements contenus dans ce devis sont
@@ -73,9 +568,41 @@ Ultra 5 225H 8 14 pouces G1i EUR
 8C9M7AV Aucune restriction concernant 1
 le pays d’origine
 1Y629AV Étiquette électronique Energy 1 + 0,00
+--- TABLEAUX PAGE 1 ---
+Tableau 1:
+N° de produit | Description du produit | MFG# : | Qté | Ecocontribu
+tions | Prix de
+base | Prix de
+passage | Prix
+unitaire | Prix total | CO2e
+AP6J2AV
+8C9M7AV
+1Y629AV | HP EliteBook 8 G1i 14 AI
+CAT5_Configuration n°
+2B_8_G1i_14_AI-WUXGA-
+300n_U5-16GB-512GB
+Identifiant du kit: 54550478
+Modèle de références:
+54550478
+Configuration: 54637602
+PC portable HP IDS UMA
+Ultra 5 225H 8 14 pouces G1i
+(modèle de base)
+Aucune restriction concernant
+le pays d’origine
+Étiquette électronique Energy |  | 1
+1
+1
+1 | 3,32 EUR | 508,00
+EUR | 306,00
+EUR
++ 20,00
+EUR
++ 0,00 | 814,00
+EUR | 814,00 EUR | 171,31 kg
+171,31 kg
 
 --- PAGE 2 ---
-
 Page 2 of 5
 PC Gonflé Angelique + stat+kb+ecran27 DEVIS CLIENT 9307376
 Les renseignements contenus dans ce devis sont
@@ -122,9 +649,15 @@ X9H42AV Sans prise en charge vPro 1
 AMT
 AP6P7AV Standard Packaging 1
 3AH72AV EU RED Pictogram Label 1
+--- TABLEAUX PAGE 2 ---
+Tableau 1:
+N° de produit | Description du produit | MFG# : | Qté | Ecocontribu
+tions | Prix de
+base | Prix de
+passage | Prix
+unitaire | Prix total | CO2e
 
 --- PAGE 3 ---
-
 Page 3 of 5
 PC Gonflé Angelique + stat+kb+ecran27 DEVIS CLIENT 9307376
 Les renseignements contenus dans ce devis sont
@@ -177,9 +710,79 @@ Carte de garantie,Câble HDMI,
 secteur
 Garantie fabricant - Garantie
 limitée HP de trois ans
+--- TABLEAUX PAGE 3 ---
+Tableau 1:
+N° de produit | Description du produit | MFG# : | Qté | Ecocontribu
+tions | Prix de
+base | Prix de
+passage | Prix
+unitaire | Prix total | CO2e
+3E755AV
+A19B1AV
+AY170AV
+UJ8P6B
+U80M4E
+W9G27AA | Étiquette électronique de
+certification TCO
+Core Ultra 5 sz3 G16 Label
+HP Operations Service
+HP 9Y Matinfo 6 BF NMD NB
+Supp
+Service HP Priority
+Management 5 ans pour
+produits PC PPS - Plus de
+5000 places
+Services HP Inside Delivery
+pour ordinateur portable |  | 1
+1
+1
+1
+1
+1 |  |  | + 0,00
+EUR
++ 92,00
+EUR |  |  | 
+5TW10AA#ABB
+UJ8L4B | HP Docking Station USB-C G5
+HP Docking Station USB-C G5
+Identifiant du kit: 1067049
+Station d'accueil HP USB-C
+G5 EMEA-INTL English Loc-
+Euro plug
+HP 7Y MATINFO6 BF NBD
+Doc Supp |  | 1
+1
+1 | 0,22 EUR |  |  | 107,00
+EUR | 107,00 EUR | 2,18 kg
+2,18 kg
+AX2Y7AA#ABF | HP 225 Wired MSE and KB
+G2 FR
+HP 225 Wired MSE and KB
+G2 FR |  | 1 | 0,11 EUR |  |  | 18,00 EUR | 18,00 EUR | 
+B0CG8UT#ABB | HP S3 Pro 327ph FHD MNTR
+HP S3 Pro 327ph FHD MNTR
+Identifiant du kit: 1067104
+HP S3 Pro 327ph FHD MNTR
+EURO
+Technologie de dalle - IPS;
+LCD
+Fonctions d'affichage - Height
+adjustable,Tilt
+Résolution native - FHD (1920
+x 1080)
+Rapport de contraste - 1000:1
+Luminosité - 250 nits
+Contenu de l’emballage -
+Poster de configuration rapide,
+Carte de garantie,Câble HDMI,
+Écran,Cordon d’alimentation
+secteur
+Garantie fabricant - Garantie
+limitée HP de trois ans |  | 1
+1 | 2,13 EUR |  |  | 143,00
+EUR | 143,00 EUR | 
 
 --- PAGE 4 ---
-
 Page 4 of 5
 PC Gonflé Angelique + stat+kb+ecran27 DEVIS CLIENT 9307376
 Les renseignements contenus dans ce devis sont
@@ -226,9 +829,17 @@ Notes:
 https://www.ecologic-france.com/images/medias/document/26502/Bareme-EEE-Menager-01-01-2025-FR2.pdf
 "Eco-taxes on waste electrical and electronic equipment will increase significantly and will be passed on to your bills from January 1, 2025."
 (2)Le montant des éco-contributions collectées par HP France est reversé à l'éco-organisme agréé DEEE ménagers, unique responsable des évolutions de son barème.
+--- TABLEAUX PAGE 4 ---
+Tableau 1:
+N° de produit | Description du produit | MFG# : | Qté | Ecocontribu
+tions | Prix de
+base | Prix de
+passage | Prix
+unitaire | Prix total | CO2e
+UJ8L2B | HP 7Y MATINFO6 BF NBD
+Display Supp |  | 1 |  |  |  |  |  | 
 
 --- PAGE 5 ---
-
 Page 5 of 5
 PC Gonflé Angelique + stat+kb+ecran27 DEVIS CLIENT 9307376
 Les renseignements contenus dans ce devis sont
@@ -260,3 +871,69 @@ utilisent une combinaison de processus et de données sur les produits HP, ainsi
 évaluation du cycle de vie de haute qualité. HP s’efforce de fournir les résultats les plus précis en matière d’
 impact environnemental, mais l’incertitude ne pourra jamais vraiment disparaître. Les résultats doivent être
 considérés en conséquence.
+                   14 RUE DE LA VERRERIE
+                                CS 40012
+              92197 MEUDON CEDEX, France
+                    http://www.hp.com/fr
+RCS Nanterre 448 694 133 - A.P.E : 4651Z
+           no TVA France : FR25448694133
+
+--- TABLEAU 2 ---
+                   no TVA France : FR25448694133                                                                                
+                         Informations et détails Informations concernant la facturation            Informations sur la livraison
+       Nom de l'organisation: MATINFO UNIVERSITE                    ID OM:\n 0170164528          Société: LAGEPP Université CBL1
+                           CLAUDE BERNARD LYON 1     Société: UNIVERSITE CLAUDE BERNARD                                 Adresse:
+          Nom du catalogue: MATINFO 6 UCBL LOT 2                                 LYON 1                   Ecole CPE, Batiement G
+                                                                                                            46 avenue Niels Bohr
+       Créé par: olivier.garrigues@univ-lyon1.fr                               Adresse:                                         
+                                                                                                                         La DOUA
+                                                       43 boulevard du 11 novembre 1918                                         
+                 Identifiant d'agent partenaire:                                                                                
+                                                                                                             Ville: villeurbanne
+                                                             Ville : Villeurbanne Cedex                                         
+                          Nom: Olivier GARRIGUES                                                                                
+                                                                                                           Département/Province:
+                                                                  Département/Province:                                         
+        Envoyer: olivier.garrigues@univ-lyon1.fr                                                                                
+                                                                                                              Code postal: 69100
+                                                                     Code postal: 69622                                         
+                           Téléphone: 0472431869                                                                                
+                                                                                                                        Pays: FR
+                                                                               Pays: FR                                         
+Notification par e-mail: olivier.garrigues@univ-                                                                                
+                                                                                             À l'attention de: Olivier Garrigues
+                                        lyon1.fr         À l'attention de: Nadia CHAPEL                                         
+                                                                                        Envoyer: olivier.garrigues@univ-lyon1.fr
+               Créé(s): 27 octobre 2025 16:07:10    Envoyer: nadia.chapel@univ-lyon1.fr                                         
+                                                                                                           Téléphone: 0472431885
+    Date d'expiration: 26 novembre 2025 16:05:35                   Téléphone: 472431845                                         
+                                                                                                                            Fax:
+               Mode de paiement: Bon de commande                                   Fax:                                         
+                                                                                                      Date de livraison requise:
+            Montant total du devis: 1 305,34 EUR                                                                                
+                                                                                                           Options d'expédition:
+                             No du marche 25095F                                                                                
+                                                                                                              Mode d'expédition:
+               NomClient 1000J UNIVERSITE LYON 1                                                                                
+                                        CLAUDE B                                                                                
+
+--- TABLEAU 3 ---
+Mode de transport: Expédition standard                                                                                                   
+                Récapitulatif du devis                                                                                                   
+                                                                                Ecocontribu Prix de Prix de     Prix                     
+                         N° de produit        Description du produit MFG# : Qté                                      Prix total      CO2e
+                                                                                      tions    base passage unitaire                     
+                                            HP EliteBook 8 G1i 14 AI          1    3,32 EUR  508,00  306,00   814,00 814,00 EUR 171,31 kg
+                                               CAT5_Configuration n°                            EUR     EUR      EUR                     
+                                               2B_8_G1i_14_AI-WUXGA-                                                                     
+                                                  300n_U5-16GB-512GB                                                                     
+                                        Identifiant du kit: 54550478                                                                     
+                                               Modèle de références:                                                                     
+                                                            54550478                                                                     
+                                             Configuration: 54637602                                                                     
+                               AP6J2AV        PC portable HP IDS UMA          1                     + 20,00                     171,31 kg
+                                        Ultra 5 225H 8 14 pouces G1i                                    EUR                              
+                                                    (modèle de base)                                                                     
+                               8C9M7AV Aucune restriction concernant          1                                                          
+                                                   le pays d’origine                                                                     
+                               1Y629AV Étiquette électronique Energy          1                      + 0,00                              
