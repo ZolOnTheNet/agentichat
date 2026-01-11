@@ -63,3 +63,8 @@ warn_unused_ignores = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.uv.workspace]
+members = [
+    "test.agentichat/bestPDF2txt",
+]

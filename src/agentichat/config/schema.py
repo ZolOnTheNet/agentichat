@@ -45,6 +45,17 @@ class ConfirmationConfig:
 
 
 @dataclass
+class CompressionConfig:
+    """Configuration de la compression de conversation."""
+
+    auto_enabled: bool = False  # Activer la compression automatique
+    auto_threshold: int = 20  # Nombre de messages pour déclencher auto-compress
+    auto_keep: int = 5  # Nombre de messages à garder après auto-compress
+    warning_threshold: float = 0.75  # Pourcentage (0-1) pour afficher avertissement
+    max_messages: int | None = None  # Limite max de messages (None = illimité)
+
+
+@dataclass
 class Config:
     """Configuration globale de agentichat."""
 
@@ -58,8 +69,12 @@ class Config:
     # Confirmations
     confirmations: ConfirmationConfig = field(default_factory=ConfirmationConfig)
 
+    # Compression
+    compression: CompressionConfig = field(default_factory=CompressionConfig)
+
     # Chemins
-    data_dir: Path = field(default_factory=lambda: Path.home() / ".agentichat")
+    config_dir: Path = field(default_factory=lambda: Path.home() / ".agentichat")  # Config globale
+    data_dir: Path = field(default_factory=lambda: Path.cwd() / ".agentichat")  # Données locales
 
     # Agent
     max_iterations: int = 10
@@ -136,12 +151,24 @@ def validate_config(config: dict[str, Any]) -> Config:
         shell_commands=confirm_data.get("shell_commands", True),
     )
 
+    # Compression
+    compress_data = config.get("compression", {})
+    compression = CompressionConfig(
+        auto_enabled=compress_data.get("auto_enabled", False),
+        auto_threshold=compress_data.get("auto_threshold", 20),
+        auto_keep=compress_data.get("auto_keep", 5),
+        warning_threshold=compress_data.get("warning_threshold", 0.75),
+        max_messages=compress_data.get("max_messages"),
+    )
+
     # Chemins
+    config_dir = Path.home() / ".agentichat"  # Config globale (non configurable)
+
     data_dir_str = config.get("data_dir")
     if data_dir_str:
         data_dir = Path(data_dir_str).expanduser()
     else:
-        data_dir = Path.home() / ".agentichat"
+        data_dir = Path.cwd() / ".agentichat"  # Données locales au projet
 
     # Agent
     max_iterations = config.get("max_iterations", 10)
@@ -155,6 +182,8 @@ def validate_config(config: dict[str, Any]) -> Config:
         backends=backends_dict,
         sandbox=sandbox,
         confirmations=confirmations,
+        compression=compression,
+        config_dir=config_dir,
         data_dir=data_dir,
         max_iterations=max_iterations,
         proxy_port=proxy_port,

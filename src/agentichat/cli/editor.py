@@ -20,17 +20,24 @@ class MultiLineEditor:
     - Copier/coller
     """
 
-    def __init__(self, history_file: Path | None = None, bottom_toolbar=None) -> None:
+    def __init__(
+        self,
+        history_file: Path | None = None,
+        bottom_toolbar=None,
+        on_shift_tab=None
+    ) -> None:
         """Initialise l'éditeur.
 
         Args:
             history_file: Chemin vers le fichier d'historique (optionnel)
             bottom_toolbar: Fonction ou callable qui retourne le texte de la barre de statut en bas
+            on_shift_tab: Callback appelé quand l'utilisateur tape Shift+Tab (optionnel)
         """
         self.history_file = history_file
         self._session: PromptSession | None = None
         self._draft_text = ""  # Brouillon en cours d'édition
         self.bottom_toolbar = bottom_toolbar  # Fonction pour la barre de statut
+        self.on_shift_tab = on_shift_tab  # Callback pour Shift+Tab
 
     def _create_key_bindings(self) -> KeyBindings:
         """Crée les raccourcis clavier personnalisés.
@@ -110,6 +117,13 @@ class MultiLineEditor:
             """Quitte l'application."""
             event.app.exit(exception=EOFError)
 
+        # Shift+Tab = Cycler les modes de confirmation
+        @kb.add(Keys.BackTab)  # BackTab = Shift+Tab
+        def _(event):  # type: ignore
+            """Cycle les modes de confirmation (Ask → Auto → Force → Ask)."""
+            if self.on_shift_tab:
+                self.on_shift_tab()
+
         return kb
 
     async def prompt(self, message: str = "> ") -> str:
@@ -158,14 +172,23 @@ class MultiLineEditor:
             raise
 
 
-def create_editor(history_file: Path | None = None, bottom_toolbar=None) -> MultiLineEditor:
+def create_editor(
+    history_file: Path | None = None,
+    bottom_toolbar=None,
+    on_shift_tab=None
+) -> MultiLineEditor:
     """Crée un éditeur de ligne multi-ligne.
 
     Args:
         history_file: Chemin vers le fichier d'historique (optionnel)
         bottom_toolbar: Fonction pour la barre de statut en bas
+        on_shift_tab: Callback pour Shift+Tab (optionnel)
 
     Returns:
         MultiLineEditor configuré
     """
-    return MultiLineEditor(history_file=history_file, bottom_toolbar=bottom_toolbar)
+    return MultiLineEditor(
+        history_file=history_file,
+        bottom_toolbar=bottom_toolbar,
+        on_shift_tab=on_shift_tab
+    )

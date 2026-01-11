@@ -1,6 +1,7 @@
 """Système de confirmation pour les opérations sensibles."""
 
 import json
+from enum import Enum
 from typing import Any
 
 from prompt_toolkit import PromptSession
@@ -9,6 +10,13 @@ from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
 from rich.syntax import Syntax
+
+
+class ConfirmationMode(Enum):
+    """Modes de confirmation disponibles."""
+    ASK = "ask"      # Demander confirmation (défaut)
+    AUTO = "auto"    # Accepter automatiquement (après un "A")
+    FORCE = "force"  # Toujours accepter sans demander
 
 
 class ConfirmationManager:
@@ -21,7 +29,7 @@ class ConfirmationManager:
             console: Console Rich pour l'affichage
         """
         self.console = console
-        self.passthrough_mode = False  # Mode "Oui à tout"
+        self.mode = ConfirmationMode.ASK  # Mode par défaut
         self.prompt_session = PromptSession()
         self.live_display: Live | None = None  # Référence au Live display actif
         self._setup_keybindings()
@@ -54,6 +62,31 @@ class ConfirmationManager:
             event.current_buffer.text = "?"
             event.current_buffer.validate_and_handle()
 
+    def cycle_mode(self) -> None:
+        """Change de mode de confirmation (cyclique).
+
+        ASK → AUTO → FORCE → ASK
+        """
+        if self.mode == ConfirmationMode.ASK:
+            self.mode = ConfirmationMode.AUTO
+        elif self.mode == ConfirmationMode.AUTO:
+            self.mode = ConfirmationMode.FORCE
+        else:  # FORCE
+            self.mode = ConfirmationMode.ASK
+
+    def get_mode_display(self) -> str:
+        """Retourne l'affichage du mode actuel pour la barre de statut.
+
+        Returns:
+            Chaîne formatée (ex: "Ask", "Auto", "Force")
+        """
+        if self.mode == ConfirmationMode.ASK:
+            return "Ask"
+        elif self.mode == ConfirmationMode.AUTO:
+            return "Auto"
+        else:  # FORCE
+            return "Force"
+
     async def confirm(self, tool_name: str, arguments: dict[str, Any]) -> bool:
         """Demande confirmation à l'utilisateur.
 
@@ -64,8 +97,8 @@ class ConfirmationManager:
         Returns:
             True si confirmé, False sinon
         """
-        # Si mode passthrough, accepter automatiquement
-        if self.passthrough_mode:
+        # Si mode AUTO ou FORCE, accepter automatiquement
+        if self.mode in [ConfirmationMode.AUTO, ConfirmationMode.FORCE]:
             return True
 
         # Arrêter le spinner si actif
@@ -104,9 +137,9 @@ class ConfirmationManager:
                 return True
 
             elif response in ["a", "all", "t", "tout"]:
-                self.passthrough_mode = True
+                self.mode = ConfirmationMode.AUTO
                 self.console.print(
-                    "[bold yellow on black] ✓ OUI À TOUT - Mode passthrough activé [/bold yellow on black]\n"
+                    "[bold yellow on black] ✓ OUI À TOUT - Mode AUTO activé (Shift+Tab pour changer) [/bold yellow on black]\n"
                 )
                 # Redémarrer le spinner si nécessaire
                 if live_was_active and self.live_display is not None:
@@ -199,7 +232,7 @@ class ConfirmationManager:
 
 [yellow]A[/yellow] / [yellow]All[/yellow]
     Accepte cette opération ET toutes les suivantes
-    (active le mode passthrough jusqu'à la fin de la requête)
+    (active le mode passthrough pour toute la session)
 
 [red]N[/red] / [red]No[/red]
     Refuse cette opération
@@ -210,6 +243,11 @@ class ConfirmationManager:
 """
         self.console.print(help_text)
 
+    def reset_mode(self) -> None:
+        """Réinitialise le mode de confirmation à ASK."""
+        self.mode = ConfirmationMode.ASK
+
+    # Compatibility alias (pour ne pas casser le code existant)
     def reset_passthrough(self) -> None:
-        """Réinitialise le mode passthrough."""
-        self.passthrough_mode = False
+        """Alias pour reset_mode() (compatibilité)."""
+        self.reset_mode()

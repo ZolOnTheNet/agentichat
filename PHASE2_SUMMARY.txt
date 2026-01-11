@@ -7,14 +7,14 @@
 📊 STATISTIQUES
 
 Fichiers Python créés/modifiés :
-   • src/llmchat/utils/sandbox.py (nouveau)
-   • src/llmchat/tools/registry.py (nouveau)
-   • src/llmchat/tools/file_ops.py (nouveau)
-   • src/llmchat/tools/search.py (nouveau)
-   • src/llmchat/tools/shell.py (nouveau)
-   • src/llmchat/core/agent.py (nouveau)
-   • src/llmchat/cli/confirmation.py (nouveau)
-   • src/llmchat/cli/app.py (modifié - intégration agentique)
+   • src/agentichat/utils/sandbox.py (nouveau)
+   • src/agentichat/tools/registry.py (nouveau)
+   • src/agentichat/tools/file_ops.py (nouveau)
+   • src/agentichat/tools/search.py (nouveau)
+   • src/agentichat/tools/shell.py (nouveau)
+   • src/agentichat/core/agent.py (nouveau)
+   • src/agentichat/cli/confirmation.py (nouveau)
+   • src/agentichat/cli/app.py (modifié - intégration agentique)
 
 Tests et Documentation :
    • test_phase2.py
@@ -73,7 +73,7 @@ Tous les tests passent : ✅
    $ .venv/bin/python test_phase2.py
 
 2. Lancer le chat agentique :
-   $ .venv/bin/llmchat
+   $ .venv/bin/agentichat
 
 3. Essayer une commande :
    > Crée un fichier hello.py avec un Hello World et exécute-le
@@ -84,7 +84,7 @@ Tous les tests passent : ✅
 
 Fichiers :
    • "Liste tous les fichiers Python du projet"
-   • "Lis le fichier src/llmchat/main.py"
+   • "Lis le fichier src/agentichat/main.py"
    • "Crée un fichier test.txt avec 'Hello World'"
 
 Recherche :
