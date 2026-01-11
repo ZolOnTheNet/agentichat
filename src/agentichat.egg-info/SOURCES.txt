@@ -9,10 +9,12 @@ src/agentichat.egg-info/entry_points.txt
 src/agentichat.egg-info/requires.txt
 src/agentichat.egg-info/top_level.txt
 src/agentichat/backends/__init__.py
+src/agentichat/backends/albert.py
 src/agentichat/backends/base.py
 src/agentichat/backends/ollama.py
 src/agentichat/cache/__init__.py
 src/agentichat/cli/__init__.py
+src/agentichat/cli/albert_manager.py
 src/agentichat/cli/app.py
 src/agentichat/cli/confirmation.py
 src/agentichat/cli/editor.py
@@ -28,6 +30,7 @@ src/agentichat/core/agent.py
 src/agentichat/index/__init__.py
 src/agentichat/proxy/__init__.py
 src/agentichat/tools/__init__.py
+src/agentichat/tools/albert_tools.py
 src/agentichat/tools/directory_ops.py
 src/agentichat/tools/file_ops.py
 src/agentichat/tools/glob_tool.py
@@ -38,4 +41,5 @@ src/agentichat/tools/todo_tool.py
 src/agentichat/tools/web_tools.py
 src/agentichat/utils/__init__.py
 src/agentichat/utils/logger.py
+src/agentichat/utils/model_metadata.py
 src/agentichat/utils/sandbox.py

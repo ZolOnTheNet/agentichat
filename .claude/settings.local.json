@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(agentichat --help:*)",
+      "Bash(uv run agentichat --help:*)",
+      "Bash(uv run:*)",
+      "Bash(curl:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
