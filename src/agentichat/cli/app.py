@@ -1,6 +1,7 @@
 """Boucle CLI principale de agentichat."""
 
 import asyncio
+import pickle
 import signal
 import time
 from pathlib import Path
@@ -37,6 +38,7 @@ from ..tools.shell import ShellExecTool
 from ..tools.todo_tool import TodoWriteTool
 from ..tools.web_tools import WebFetchTool, WebSearchTool
 from ..utils.database import DatabaseManager
+from ..utils.guidelines import GuidelinesManager
 from ..utils.logger import get_logger, setup_logger
 from ..utils.model_metadata import ModelMetadataManager
 from ..utils.sandbox import Sandbox
@@ -93,6 +95,9 @@ class ChatApp:
 
         # Créer le gestionnaire de prompt
         self.prompt_manager = PromptManager(self.console)
+
+        # Créer le gestionnaire de guidelines (sera initialisé avec backend)
+        self.guidelines_manager: GuidelinesManager | None = None
 
     async def initialize(self) -> None:
         """Initialise l'application (backend, tools, etc.)."""
@@ -276,6 +281,15 @@ class ChatApp:
         # Initialiser le gestionnaire de confirmation
         self.confirmation_manager = ConfirmationManager(self.console)
 
+        # Initialiser le gestionnaire de guidelines
+        self.guidelines_manager = GuidelinesManager(
+            workspace_dir=workspace_root,
+            backend=self.backend
+        )
+
+        # Vérifier et charger les guidelines si disponibles
+        await self._check_and_load_guidelines()
+
         # Vérifier que le modèle configuré existe
         if not await self._verify_model():
             self.console.print(
@@ -375,6 +389,139 @@ class ChatApp:
 
         return True
 
+    async def _check_and_load_guidelines(self) -> None:
+        """Vérifie et charge les guidelines si disponibles."""
+        if not self.guidelines_manager:
+            return
+
+        # Vérifier si AGENTICHAT.md existe
+        if not self.guidelines_manager.has_source():
+            logger.debug("No AGENTICHAT.md found")
+            return
+
+        # Vérifier le mode de chargement configuré
+        load_mode = self.config.guidelines.load_mode
+
+        if load_mode == "off":
+            logger.debug("Guidelines loading disabled (load_mode=off)")
+            return
+
+        # Vérifier si compilation nécessaire (silencieux)
+        if self.guidelines_manager.needs_compilation():
+            try:
+                await self.guidelines_manager.compile_guidelines()
+                logger.info("Guidelines compiled")
+            except Exception as e:
+                logger.error(f"Guidelines compilation failed: {e}")
+                return
+
+        # Injecter les guidelines dans la conversation
+        await self._inject_guidelines()
+
+        # Message simple en vert
+        self.console.print("[bold green]LU AGENTICHAT.md[/bold green]")
+
+    async def _inject_guidelines(self) -> None:
+        """Injecte les guidelines compilées en premier message."""
+        if not self.guidelines_manager:
+            return
+
+        system_message = self.guidelines_manager.get_system_message()
+        if system_message:
+            # Supprimer l'ancien message de guidelines s'il existe
+            self.messages = [
+                m for m in self.messages
+                if not (m.role == "system" and "[User Project Guidelines]" in m.content)
+            ]
+
+            # Insérer en premier
+            self.messages.insert(0, system_message)
+            logger.info("Guidelines injected into conversation")
+
+    def _get_conversation_file(self) -> Path:
+        """Retourne le chemin du fichier de sauvegarde de conversation.
+
+        Returns:
+            Path vers conversation.pkl
+        """
+        return self.config.data_dir / "conversation.pkl"
+
+    def _save_conversation(self) -> None:
+        """Sauvegarde la conversation dans un fichier."""
+        conv_file = self._get_conversation_file()
+
+        try:
+            # Créer le répertoire si nécessaire
+            conv_file.parent.mkdir(parents=True, exist_ok=True)
+
+            # Sauvegarder avec pickle
+            with open(conv_file, "wb") as f:
+                pickle.dump(self.messages, f)
+
+            logger.info(f"Conversation saved to {conv_file} ({len(self.messages)} messages)")
+            self.console.print(
+                f"[bold green]✓[/bold green] Discussion sauvegardée "
+                f"({len(self.messages)} messages)\n"
+            )
+        except Exception as e:
+            error_display = str(e).replace("[", "\\[").replace("]", "\\]")
+            self.console.print(
+                f"[bold red]Erreur lors de la sauvegarde:[/bold red] {error_display}\n"
+            )
+            logger.error(f"Failed to save conversation: {e}")
+
+    def _load_conversation(self) -> bool:
+        """Charge la conversation sauvegardée si elle existe.
+
+        Returns:
+            True si une conversation a été chargée, False sinon
+        """
+        conv_file = self._get_conversation_file()
+
+        if not conv_file.exists():
+            logger.debug("No saved conversation found")
+            return False
+
+        try:
+            with open(conv_file, "rb") as f:
+                loaded_messages = pickle.load(f)
+
+            # Vérifier que c'est bien une liste de messages
+            if not isinstance(loaded_messages, list):
+                logger.warning("Invalid conversation file format")
+                return False
+
+            self.messages = loaded_messages
+            logger.info(f"Conversation loaded from {conv_file} ({len(self.messages)} messages)")
+
+            # Calculer la taille approximative
+            total_chars = sum(len(m.content or "") for m in self.messages)
+            size_kb = total_chars / 1024
+
+            self.console.print(
+                f"[bold cyan]Récupération de la discussion[/bold cyan] "
+                f"({len(self.messages)} messages, ~{size_kb:.1f} KB)\n"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to load conversation: {e}")
+            self.console.print(
+                f"[bold yellow]⚠[/bold yellow] Impossible de charger la discussion sauvegardée\n"
+            )
+            return False
+
+    def _delete_conversation(self) -> None:
+        """Supprime le fichier de conversation sauvegardée."""
+        conv_file = self._get_conversation_file()
+
+        if conv_file.exists():
+            try:
+                conv_file.unlink()
+                logger.info("Saved conversation deleted")
+            except Exception as e:
+                logger.error(f"Failed to delete conversation file: {e}")
+
     async def run(self) -> None:
         """Lance la boucle principale du CLI."""
         if not self.backend or not self.agent:
@@ -394,6 +541,9 @@ class ChatApp:
         self.console.print(
             "[dim]💡 Après une erreur ou limite d'itérations, vous pouvez toujours continuer[/dim]\n"
         )
+
+        # Charger la conversation sauvegardée si elle existe
+        self._load_conversation()
 
         # Boucle principale
         while True:
@@ -415,11 +565,43 @@ class ChatApp:
                     break
 
                 if user_input == "/clear":
+                    # Vérifier si une sauvegarde existe
+                    conv_file = self._get_conversation_file()
+                    delete_save = False
+
+                    if conv_file.exists():
+                        self.console.print(
+                            "[yellow]Une discussion sauvegardée existe.[/yellow]\n"
+                            "[dim]Voulez-vous la supprimer ? (Y/n):[/dim] ",
+                            end=""
+                        )
+                        response = input().strip()
+                        delete_save = response.lower() not in ["n", "no", "non"]
+
+                    # Effacer les messages
                     self.messages = []
+
                     # Réinitialiser aussi le mode passthrough (nouvelle conversation)
                     if self.confirmation_manager:
                         self.confirmation_manager.reset_passthrough()
-                    self.console.print("[dim]Conversation réinitialisée[/dim]\n")
+
+                    # Supprimer la sauvegarde si demandé
+                    if delete_save:
+                        self._delete_conversation()
+                        self.console.print("[dim]Conversation et sauvegarde supprimées[/dim]\n")
+                    else:
+                        self.console.print("[dim]Conversation réinitialisée (sauvegarde conservée)[/dim]\n")
+
+                    # Ré-injecter les guidelines si disponibles
+                    await self._inject_guidelines()
+                    continue
+
+                if user_input == "/save":
+                    self._save_conversation()
+                    continue
+
+                if user_input.startswith("/history"):
+                    self._handle_history_command(user_input)
                     continue
 
                 if user_input.startswith("/help"):
@@ -464,6 +646,11 @@ class ChatApp:
                 # Commande /compress
                 if user_input.startswith("/compress"):
                     await self._handle_compress_command(user_input)
+                    continue
+
+                # Commande /compile
+                if user_input == "/compile":
+                    await self._handle_compile_command()
                     continue
 
                 # Commande /! pour exécuter directement une commande shell
@@ -665,7 +852,10 @@ class ChatApp:
 
             # Afficher la réponse (si elle existe)
             if response:
-                self.console.print("\n[bold green]Assistant:[/bold green]")
+                # Ajouter un séparateur visuel avant la réponse
+                self.console.print()
+                self.console.print("[dim]" + "─" * 40 + "[/dim]")
+                self.console.print("[bold green]Assistant:[/bold green]")
                 self.console.print(response)
 
                 # Si c'est un message de limite d'itérations, ajouter une note
@@ -839,9 +1029,13 @@ class ChatApp:
 ## Commandes Principales
 - `/help <topic>` - Aide détaillée sur un sujet
 - `/quit`, `/exit` - Quitter l'application
-- `/clear` - Réinitialiser la conversation
+- `/clear` - Réinitialiser la conversation (efface la sauvegarde)
+- `/save` - Sauvegarder la discussion
+- `/history` - Afficher l'historique complet
+- `/history compress` - Afficher le message compressé
 - `/info` - Statistiques de la session
 - `/compress` - Compresser l'historique
+- `/compile` - Compiler les consignes AGENTICHAT.md
 - `/model` - Afficher le modèle actif
 - `/! <cmd>` - Exécuter une commande shell
 
@@ -849,7 +1043,9 @@ class ChatApp:
 Tapez `/help <topic>` pour plus d'informations :
 
 - **compress** - Compression de conversation et gestion mémoire
+- **compile** - Compilation des consignes utilisateur (AGENTICHAT.md)
 - **config** - Configuration de l'application
+- **history** - Sauvegarde et historique des discussions
 - **log** - Visualisation et recherche dans les logs
 - **ollama** - Commandes pour backend Ollama
 - **albert** - Commandes pour backend Albert
@@ -911,6 +1107,94 @@ Configure la compression automatique.
 /config compress --auto 20 5   # Auto-compresse à 20 messages, garde 5
 ```
 """,
+            "compile": """
+# Compilation des Consignes
+
+## Commandes
+
+### /compile
+Compile manuellement le fichier `AGENTICHAT.md` en format optimisé pour LLM.
+
+### /config compile
+Configure le mode de chargement des guidelines.
+- `/config compile` - Affiche la configuration
+- `/config compile --load <mode>` - Change le mode de chargement
+
+**Modes disponibles:**
+- `confirm` - Demander confirmation au démarrage (défaut)
+- `auto` - Charger automatiquement sans demander
+- `off` - Ne jamais charger automatiquement
+
+## Fonctionnement
+
+1. **Fichier Source**: `AGENTICHAT.md`
+   - Fichier markdown contenant vos consignes pour le projet
+   - Lisible par les humains, format libre
+
+2. **Fichier Compilé**: `.agentichat/consignes.atc`
+   - Version optimisée par le LLM pour sa propre consommation
+   - Format structuré, en anglais, concis
+
+3. **Détection Automatique**
+   - Au démarrage, agentichat détecte `AGENTICHAT.md` automatiquement
+   - Comportement dépend du mode configuré (confirm/auto/off)
+   - Vérifie la date de modification pour recompiler si nécessaire
+
+4. **Injection dans la Conversation**
+   - Les consignes compilées sont injectées comme premier message (role: system)
+   - Re-injectées après `/clear` ou `/compress`
+
+## Cas d'Usage
+
+- **Conventions de code** - Style, nommage, patterns à suivre
+- **Architecture** - Structure du projet, modules, dépendances
+- **Règles métier** - Contraintes spécifiques au projet
+- **Documentation** - Références importantes pour le développement
+
+## Exemple
+
+Créez `AGENTICHAT.md` à la racine de votre projet:
+
+```markdown
+# Consignes pour le Projet
+
+## Style de Code
+- Utiliser Python 3.11+ avec type hints
+- Suivre PEP 8 et formater avec ruff
+- Docstrings au format Google
+
+## Architecture
+- Backend modulaire (voir backends/base.py)
+- Tools dans tools/registry.py
+- Tests requis pour nouvelles features
+```
+
+Puis lancez `/compile` pour optimiser et charger dans la conversation.
+
+## Configuration
+
+```
+# Mode confirm (défaut) - demande confirmation
+/config compile --load confirm
+
+# Mode auto - charge automatiquement
+/config compile --load auto
+
+# Mode off - ne charge jamais automatiquement
+/config compile --load off
+```
+
+## Workflow
+
+```
+1. Créer/modifier AGENTICHAT.md
+2. Configurer le mode: /config compile --load <mode>
+3. Lancer `/compile` (ou redémarrer agentichat)
+4. Le LLM optimise le contenu
+5. Consignes sauvegardées dans .agentichat/consignes.atc
+6. Injection automatique dans la conversation
+```
+""",
             "config": """
 # Configuration
 
@@ -931,6 +1215,13 @@ Active/désactive les logs détaillés.
 
 ### /config compress
 Configure la compression (voir `/help compress`)
+
+### /config compile
+Configure le chargement des guidelines.
+- `/config compile` - Affiche la configuration
+- `/config compile --load <mode>` - Change le mode (confirm/auto/off)
+
+Voir `/help compile` pour plus de détails.
 
 ## Fichier de Configuration
 - Local (projet): `.agentichat/config.yaml`
@@ -1071,6 +1362,97 @@ Le LLM a accès à ces outils pour interagir avec votre système :
 ## Confirmations
 ⚠ Les operations destructives nécessitent confirmation (Y/N/A).
 """,
+            "history": """
+# Sauvegarde et Historique
+
+## Commandes
+
+### /save
+Sauvegarde la discussion actuelle dans un fichier.
+- Fichier : `.agentichat/conversation.pkl`
+- Sauvegarde tous les messages (utilisateur, assistant, système, tools)
+- Permet de reprendre la conversation plus tard
+
+### /history
+Affiche l'historique complet de la conversation.
+- Liste tous les messages avec leur rôle (Vous, Assistant, Système, Tool)
+- Affiche les 500 premiers caractères des longs messages
+- Statistiques : nombre de messages et taille totale
+
+### /history compress
+Affiche uniquement le message compressé (résumé).
+- Utile après avoir utilisé `/compress`
+- Montre le résumé généré par le LLM
+
+### /clear
+Réinitialise la conversation ET supprime la sauvegarde.
+
+## Fonctionnement
+
+### Sauvegarde Automatique
+Au démarrage, agentichat charge automatiquement la dernière discussion sauvegardée :
+```
+Récupération de la discussion (15 messages, ~12.3 KB)
+```
+
+### Workflow Typique
+
+1. **Travailler sur un projet**
+   ```
+   > Aide-moi à créer une application
+   Assistant: Voici...
+   ```
+
+2. **Sauvegarder avant de quitter**
+   ```
+   > /save
+   ✓ Discussion sauvegardée (15 messages)
+   > /quit
+   ```
+
+3. **Reprendre plus tard**
+   ```
+   $ agentichat
+   Récupération de la discussion (15 messages, ~12.3 KB)
+   > Continue où on s'était arrêté...
+   ```
+
+4. **Consulter l'historique**
+   ```
+   > /history
+   === Historique de la Discussion ===
+   15 messages au total
+
+   1. Vous
+   Aide-moi à créer...
+
+   2. Assistant
+   Voici comment...
+   ...
+   ```
+
+## Cas d'Usage
+
+- **Sessions longues** - Reprendre un projet complexe sur plusieurs jours
+- **Backup** - Sauvegarder le travail régulièrement
+- **Review** - Revoir toute la conversation avec `/history`
+- **Debug** - Voir le message compressé avec `/history compress`
+
+## Fichier de Sauvegarde
+
+**Emplacement :** `.agentichat/conversation.pkl`
+
+**Format :** Pickle Python (binaire)
+
+**Contenu :** Liste complète des messages (Message objects)
+
+## Notes
+
+- La sauvegarde est **locale au projet** (répertoire `.agentichat/`)
+- `/clear` supprime la sauvegarde (nouveau départ)
+- `/save` écrase la sauvegarde précédente
+- Compatible avec `/compress` - le résumé est sauvegardé aussi
+""",
             "shortcuts": """
 # Raccourcis Clavier
 
@@ -1111,7 +1493,7 @@ Toggle avec `/prompt toggle`
             self.console.print(
                 f"[yellow]Topic '{topic}' inconnu.[/yellow]\n\n"
                 "[bold]Topics disponibles:[/bold]\n"
-                "  compress, config, log, ollama, albert, prompt, tools, shortcuts\n\n"
+                "  compress, compile, config, history, log, ollama, albert, prompt, tools, shortcuts\n\n"
                 "[dim]Utilisez /help <topic> pour afficher l'aide détaillée.[/dim]\n"
             )
 
@@ -1280,6 +1662,67 @@ Toggle avec `/prompt toggle`
                     "  /config compress --auto <seuil> <N> - Configure l'auto-compression\n"
                 )
 
+        elif len(parts) >= 2 and parts[1] == "compile":
+            # Gestion de la configuration du chargement des guidelines
+            guidelines_config = self.config.guidelines
+
+            if len(parts) == 2:
+                # Afficher la configuration actuelle
+                self.console.print("\n[bold cyan]=== Configuration des Guidelines ===[/bold cyan]")
+                self.console.print(
+                    f"[dim]Mode de chargement:[/dim] {guidelines_config.load_mode}"
+                )
+                self.console.print()
+                self.console.print("[bold]Modes disponibles:[/bold]")
+                self.console.print("  • [cyan]confirm[/cyan] - Demander confirmation au démarrage (défaut)")
+                self.console.print("  • [cyan]auto[/cyan]    - Charger automatiquement sans demander")
+                self.console.print("  • [cyan]off[/cyan]     - Ne jamais charger automatiquement")
+                self.console.print()
+                return
+
+            action = parts[2].lower()
+
+            if action == "--load":
+                if len(parts) < 4:
+                    self.console.print(
+                        "[red]Erreur: --load nécessite une valeur[/red]\n"
+                        "[dim]Usage: /config compile --load <confirm|auto|off>[/dim]\n"
+                    )
+                    return
+
+                mode = parts[3].lower()
+                if mode not in ["confirm", "auto", "off"]:
+                    self.console.print(
+                        f"[red]Erreur: Mode '{mode}' invalide[/red]\n"
+                        "[dim]Modes valides: confirm, auto, off[/dim]\n"
+                    )
+                    return
+
+                guidelines_config.load_mode = mode
+                self.console.print(
+                    f"[bold green]✓[/bold green] Mode de chargement: {mode}\n"
+                )
+
+                # Sauvegarder dans la config
+                try:
+                    save_config(self.config)
+                    config_path = get_config_path()
+                    self.console.print(f"[dim]Configuration sauvegardée dans {config_path}[/dim]\n")
+                except Exception as e:
+                    logger.error(f"Failed to save config: {e}")
+                    self.console.print(
+                        f"[bold yellow]⚠[/bold yellow] Impossible de sauvegarder: {e}\n"
+                    )
+
+            else:
+                self.console.print(
+                    f"[red]Erreur: Option inconnue '{action}'[/red]\n"
+                    "[bold yellow]Options disponibles:[/bold yellow]\n"
+                    "  /config compile               - Affiche la configuration\n"
+                    "  /config compile --load <mode> - Configure le mode de chargement\n"
+                    "                                  (confirm, auto, off)\n"
+                )
+
         else:
             # Commande invalide
             self.console.print(
@@ -1290,6 +1733,7 @@ Toggle avec `/prompt toggle`
                 "  /config debug on                    - Active le mode debug\n"
                 "  /config debug off                   - Désactive le mode debug\n"
                 "  /config compress                    - Configure la compression de conversation\n"
+                "  /config compile                     - Configure le chargement des guidelines\n"
             )
 
     async def _switch_backend(self, backend_name: str) -> None:
@@ -2276,6 +2720,9 @@ Résumé structuré:"""
             # Remplacer les messages par: résumé + messages à garder
             self.messages = [compressed_message] + messages_to_keep
 
+            # Ré-injecter les guidelines si disponibles
+            await self._inject_guidelines()
+
             # Statistiques après compression
             compressed_count = len(self.messages)
             compressed_chars = sum(len(msg.content or "") for msg in self.messages)
@@ -2314,6 +2761,65 @@ Résumé structuré:"""
             error_display = str(e).replace("[", "\\[").replace("]", "\\]")
             self.console.print(f"[red]Erreur lors de la compression: {error_display}[/red]\n")
             logger.error(f"Compression error: {e}", exc_info=True)
+
+    async def _handle_compile_command(self) -> None:
+        """Compile manuellement les consignes AGENTICHAT.md."""
+        if not self.guidelines_manager:
+            self.console.print("[yellow]Gestionnaire de consignes non initialisé[/yellow]\n")
+            return
+
+        # Vérifier si AGENTICHAT.md existe
+        if not self.guidelines_manager.has_source():
+            self.console.print(
+                f"[yellow]Fichier {self.guidelines_manager.source_file.name} "
+                f"introuvable dans le workspace[/yellow]\n"
+            )
+            self.console.print(
+                "[dim]Créez un fichier AGENTICHAT.md avec vos consignes pour le projet[/dim]\n"
+            )
+            return
+
+        self.console.print(
+            f"\n[bold cyan]📋 Compilation de {self.guidelines_manager.source_file.name}[/bold cyan]"
+        )
+        self.console.print("[dim]Optimisation pour format LLM en cours...[/dim]\n")
+
+        try:
+            # Compiler avec le LLM
+            compiled_content = await self.guidelines_manager.compile_guidelines()
+
+            self.console.print("[bold green]✓ Compilation réussie ![/bold green]\n")
+            self.console.print(
+                f"[dim]Fichier compilé:[/dim] {self.guidelines_manager.compiled_file}"
+            )
+
+            # Afficher un aperçu du contenu compilé
+            preview_lines = compiled_content.split("\n")[:5]
+            preview = "\n".join(preview_lines)
+            self.console.print(f"\n[dim]Aperçu:[/dim]\n{preview}")
+            if len(compiled_content.split("\n")) > 5:
+                self.console.print("[dim]...[/dim]")
+
+            # Demander si on veut ré-injecter dans la conversation
+            self.console.print()
+            self.console.print(
+                "[dim]Voulez-vous charger ces consignes dans la conversation actuelle ? (Y/n):[/dim] ",
+                end=""
+            )
+            response = input().strip()
+
+            if response.lower() not in ["n", "no", "non"]:
+                await self._inject_guidelines()
+                self.console.print("[bold green]✓[/bold green] Consignes injectées dans la conversation\n")
+            else:
+                self.console.print("[dim]Les consignes seront utilisées au prochain démarrage[/dim]\n")
+
+        except Exception as e:
+            error_display = str(e).replace("[", "\\[").replace("]", "\\]")
+            self.console.print(
+                f"[bold red]Erreur lors de la compilation:[/bold red] {error_display}\n"
+            )
+            logger.error(f"Compilation error: {e}", exc_info=True)
 
     async def _handle_shell_command(self, command: str) -> None:
         """Exécute directement une commande shell.
@@ -2363,6 +2869,73 @@ Résumé structuré:"""
             self.console.print(f"[red]Erreur: {error_display}[/red]\n")
 
         self.console.print()
+
+    def _handle_history_command(self, command: str) -> None:
+        """Affiche l'historique de la conversation.
+
+        Args:
+            command: Commande complète (ex: "/history", "/history compress")
+        """
+        parts = command.split()
+
+        # /history compress - Afficher uniquement le message compressé
+        if len(parts) >= 2 and parts[1] == "compress":
+            # Chercher le message de résumé
+            summary_msg = None
+            for msg in self.messages:
+                if msg.role == "system" and "[Résumé de la conversation précédente]" in (msg.content or ""):
+                    summary_msg = msg
+                    break
+
+            if summary_msg:
+                self.console.print("\n[bold cyan]=== Message Compressé ===[/bold cyan]\n")
+                self.console.print(summary_msg.content)
+                self.console.print()
+            else:
+                self.console.print("[yellow]Aucun message compressé trouvé[/yellow]\n")
+                self.console.print("[dim]Utilisez /compress pour créer un résumé[/dim]\n")
+            return
+
+        # /history - Afficher toute la conversation
+        if not self.messages:
+            self.console.print("[yellow]Aucun message dans l'historique[/yellow]\n")
+            return
+
+        self.console.print(f"\n[bold cyan]=== Historique de la Discussion ===[/bold cyan]")
+        self.console.print(f"[dim]{len(self.messages)} messages au total[/dim]\n")
+
+        for i, msg in enumerate(self.messages, 1):
+            # Déterminer le label selon le rôle
+            if msg.role == "user":
+                role_label = "[bold cyan]Vous[/bold cyan]"
+            elif msg.role == "assistant":
+                role_label = "[bold green]Assistant[/bold green]"
+            elif msg.role == "system":
+                role_label = "[bold yellow]Système[/bold yellow]"
+            elif msg.role == "tool":
+                role_label = "[bold magenta]Tool[/bold magenta]"
+            else:
+                role_label = f"[dim]{msg.role}[/dim]"
+
+            # Afficher le message
+            self.console.print(f"[dim]{i}.[/dim] {role_label}")
+
+            # Limiter l'affichage si le message est très long
+            content = msg.content or ""
+            if len(content) > 500:
+                preview = content[:500] + "..."
+                self.console.print(f"[dim]{preview}[/dim]")
+            else:
+                self.console.print(f"[dim]{content}[/dim]")
+
+            self.console.print()  # Ligne vide entre les messages
+
+        # Statistiques
+        total_chars = sum(len(m.content or "") for m in self.messages)
+        self.console.print(
+            f"[dim]Total: {len(self.messages)} messages, "
+            f"~{total_chars:,} caractères (~{total_chars / 1024:.1f} KB)[/dim]\n"
+        )
 
 
 async def run_chat(config_path: Path | None = None) -> None:

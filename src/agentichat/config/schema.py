@@ -56,6 +56,14 @@ class CompressionConfig:
 
 
 @dataclass
+class GuidelinesConfig:
+    """Configuration du chargement des guidelines (AGENTICHAT.md)."""
+
+    # Mode de chargement: "confirm" (demander), "auto" (automatique), "off" (jamais)
+    load_mode: str = "confirm"
+
+
+@dataclass
 class Config:
     """Configuration globale de agentichat."""
 
@@ -71,6 +79,9 @@ class Config:
 
     # Compression
     compression: CompressionConfig = field(default_factory=CompressionConfig)
+
+    # Guidelines
+    guidelines: GuidelinesConfig = field(default_factory=GuidelinesConfig)
 
     # Chemins
     config_dir: Path = field(default_factory=lambda: Path.home() / ".agentichat")  # Config globale
@@ -161,6 +172,13 @@ def validate_config(config: dict[str, Any]) -> Config:
         max_messages=compress_data.get("max_messages"),
     )
 
+    # Guidelines
+    guidelines_data = config.get("guidelines", {})
+    load_mode = guidelines_data.get("load_mode", "confirm")
+    if load_mode not in ["confirm", "auto", "off"]:
+        raise ValueError(f"guidelines.load_mode doit être 'confirm', 'auto' ou 'off', pas '{load_mode}'")
+    guidelines = GuidelinesConfig(load_mode=load_mode)
+
     # Chemins
     config_dir = Path.home() / ".agentichat"  # Config globale (non configurable)
 
@@ -183,6 +201,7 @@ def validate_config(config: dict[str, Any]) -> Config:
         sandbox=sandbox,
         confirmations=confirmations,
         compression=compression,
+        guidelines=guidelines,
         config_dir=config_dir,
         data_dir=data_dir,
         max_iterations=max_iterations,

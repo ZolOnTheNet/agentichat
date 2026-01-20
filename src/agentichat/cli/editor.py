@@ -7,6 +7,7 @@ from prompt_toolkit.filters import Condition
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
+from prompt_toolkit.styles import Style
 
 
 class MultiLineEditor:
@@ -147,11 +148,17 @@ class MultiLineEditor:
                 self.history_file.parent.mkdir(parents=True, exist_ok=True)
                 history = FileHistory(str(self.history_file))
 
+            # Créer un style avec fond grisé pour la zone de saisie
+            custom_style = Style.from_dict({
+                '': 'bg:#303030',  # Fond gris pour tout le texte saisi
+            })
+
             self._session = PromptSession(
                 history=history,
                 multiline=True,
                 prompt_continuation="... ",
                 key_bindings=self._create_key_bindings(),
+                style=custom_style,
             )
 
         # Réinitialiser le brouillon

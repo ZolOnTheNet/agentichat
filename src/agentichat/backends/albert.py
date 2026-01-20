@@ -47,6 +47,7 @@ class AlbertBackend(Backend):
 
         Supporte plusieurs formats:
         - [TOOL_CALLS]tool_name{"arg": "value"}
+        - [TOOL_CALLS]{"function": "tool_name", "arg": "value"}
         - ```json\n{"name": "tool_name", "arguments": {...}}\n```
 
         Args:
@@ -118,6 +119,66 @@ class AlbertBackend(Backend):
                 logger.info(f"Extracted tool call from [TOOL_CALLS] format: {tool_name}")
             except json.JSONDecodeError as e:
                 logger.debug(f"Failed to parse [TOOL_CALLS] arguments: {json_str[:100]}... Error: {e}")
+                continue
+
+        # Format 5: [TOOL_CALLS]{"function": "tool_name", ...args au même niveau...}
+        # Nouveau format où le JSON contient directement "function" pour le nom
+        pattern_func = r'\[TOOL_CALLS\](\{)'
+        matches_func = re.finditer(pattern_func, content)
+
+        for match in matches_func:
+            start_pos = match.end() - 1  # Position du '{'
+
+            # Compter les accolades pour trouver la fin du JSON
+            brace_count = 0
+            end_pos = start_pos
+            in_string = False
+            escape_next = False
+
+            for i in range(start_pos, len(content)):
+                char = content[i]
+
+                if escape_next:
+                    escape_next = False
+                    continue
+
+                if char == '\\':
+                    escape_next = True
+                    continue
+
+                if char == '"' and not escape_next:
+                    in_string = not in_string
+                    continue
+
+                if not in_string:
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+
+                        if brace_count == 0:
+                            end_pos = i + 1
+                            break
+
+            # Extraire le JSON
+            json_str = content[start_pos:end_pos]
+
+            try:
+                data = json.loads(json_str)
+                if isinstance(data, dict) and "function" in data:
+                    tool_name = data.pop("function")  # Retirer "function" du dict
+                    # Les autres clés sont les arguments
+                    arguments = data
+
+                    tool_call = ToolCall(
+                        id=str(uuid.uuid4()),
+                        name=tool_name,
+                        arguments=arguments,
+                    )
+                    tool_calls.append(tool_call)
+                    logger.info(f"Extracted tool call from [TOOL_CALLS]{{function:...}} format: {tool_name}")
+            except json.JSONDecodeError as e:
+                logger.debug(f"Failed to parse [TOOL_CALLS]{{function:...}} format: {json_str[:100]}... Error: {e}")
                 continue
 
         # Format 2: Blocs ```json ... ``` avec name et arguments/parameters
