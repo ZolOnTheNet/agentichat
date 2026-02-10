@@ -41,6 +41,7 @@ src/agentichat/tools/todo_tool.py
 src/agentichat/tools/web_tools.py
 src/agentichat/utils/__init__.py
 src/agentichat/utils/database.py
+src/agentichat/utils/guidelines.py
 src/agentichat/utils/logger.py
 src/agentichat/utils/model_metadata.py
 src/agentichat/utils/sandbox.py

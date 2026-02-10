@@ -151,6 +151,20 @@ from agentichat.tools import TOOL_REGISTRY
 ## 🔧 Commandes Utiles
 
 ### Développement
+
+**Sur Debian/Ubuntu** (Python géré par le système) :
+```bash
+# Installation des dépendances de développement via apt
+sudo apt install python3-pytest python3-pytest-cov python3-mypy
+
+# Lancer les tests
+pytest
+
+# Tests avec coverage (nécessite python3-pytest-cov)
+pytest --cov=src/agentichat --cov-report=html
+```
+
+**Avec environnement virtuel ou pip** :
 ```bash
 # Installation en mode développement
 pip install -e ".[dev]"
@@ -160,8 +174,10 @@ pytest
 
 # Tests avec coverage
 pytest --cov=src/agentichat --cov-report=html
+```
 
-# Linting et formatage
+**Linting et formatage** :
+```bash
 ruff check .
 ruff format .
 
@@ -298,6 +314,6 @@ rg "TODO|FIXME" src/
 
 ---
 
-**Version:** 1.0
-**Dernière mise à jour:** 2026-01-05
+**Version:** 1.1
+**Dernière mise à jour:** 2026-01-26
 **Projet:** agentichat (anciennement llmchat)

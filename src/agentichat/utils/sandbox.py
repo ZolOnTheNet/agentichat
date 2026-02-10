@@ -118,7 +118,7 @@ class Sandbox:
             resolved = self.validate_path(path)
             # Si le fichier existe, vérifier les permissions
             if resolved.exists():
-                return resolved.is_file() and resolved.stat().st_mode & 0o200
+                return resolved.is_file() and bool(resolved.stat().st_mode & 0o200)
             # Sinon, vérifier que le répertoire parent existe et est accessible
             else:
                 return resolved.parent.exists() and resolved.parent.is_dir()
