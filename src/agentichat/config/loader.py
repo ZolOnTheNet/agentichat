@@ -198,6 +198,7 @@ def save_config(config: Config, config_path: Path | None = None) -> None:
         "sandbox": {
             "max_file_size": config.sandbox.max_file_size,
             "blocked_paths": config.sandbox.blocked_paths,
+            "ignored_paths": config.sandbox.ignored_paths,
             **(
                 {"allowed_commands": config.sandbox.allowed_commands}
                 if config.sandbox.allowed_commands

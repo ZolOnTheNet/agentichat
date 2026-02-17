@@ -7,11 +7,7 @@
       "Bash(curl:*)",
       "Bash(apt-cache search:*)",
       "Bash(uv pip list:*)",
-      "Bash(.venv/bin/python:*)",
-      "Bash(git restore:*)",
-      "Bash(git add:*)",
-      "Bash(python3 -m py_compile:*)",
-      "Bash(python3:*)"
+      "Bash(.venv/bin/python:*)"
     ],
     "deny": [],
     "ask": []

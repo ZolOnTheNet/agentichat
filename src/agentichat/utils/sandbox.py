@@ -1,5 +1,6 @@
 """Sandbox de sécurité pour l'exécution des tools."""
 
+import fnmatch
 from pathlib import Path
 
 
@@ -17,7 +18,7 @@ class Sandbox:
 
         Args:
             root: Répertoire racine du workspace (jail)
-            config: Configuration du sandbox (max_file_size, blocked_paths)
+            config: Configuration du sandbox (max_file_size, blocked_paths, ignored_paths)
         """
         self.root = root.resolve()
         config = config or {}
@@ -31,6 +32,16 @@ class Sandbox:
                 "**/id_rsa",
                 "**/credentials.json",
                 "**/.ssh/*",
+            ],
+        )
+        self.ignored_patterns = config.get(
+            "ignored_paths",
+            [
+                "**/.venv/**", "**/venv/**", "**/env/**",
+                "**/node_modules/**",
+                "**/.git/**",
+                "**/__pycache__/**",
+                "**/build/**", "**/dist/**", "**/*.egg-info/**",
             ],
         )
 
@@ -124,3 +135,44 @@ class Sandbox:
                 return resolved.parent.exists() and resolved.parent.is_dir()
         except SandboxError:
             return False
+
+    def should_ignore(self, path: Path) -> bool:
+        """Vérifie si un chemin doit être ignoré lors des recherches récursives.
+
+        Args:
+            path: Chemin à vérifier (Path absolu ou relatif au workspace)
+
+        Returns:
+            True si le chemin correspond à un pattern ignoré
+        """
+        # Convertir en chemin relatif au workspace pour le matching
+        try:
+            if path.is_absolute():
+                rel_path = path.relative_to(self.root)
+            else:
+                rel_path = path
+        except ValueError:
+            # Chemin hors du workspace, ne pas ignorer (sera bloqué par validate_path)
+            return False
+
+        # Convertir en string pour fnmatch
+        rel_path_str = str(rel_path)
+
+        # Vérifier les patterns ignorés
+        for pattern in self.ignored_patterns:
+            # Approche 1: fnmatch direct (pour patterns simples)
+            if fnmatch.fnmatch(rel_path_str, pattern):
+                return True
+
+            # Approche 2: Vérifier si le pattern contient ** et l'adapter
+            # Extraire le nom du répertoire à ignorer du pattern (ex: **/.venv/** → .venv)
+            if "**" in pattern:
+                # Pattern type: **/.venv/** ou **/node_modules/**
+                parts = pattern.split("/")
+                for part in parts:
+                    if part and part != "**" and not part.startswith("*"):
+                        # Vérifier si ce nom de répertoire apparaît dans le chemin
+                        if part in rel_path.parts:
+                            return True
+
+        return False

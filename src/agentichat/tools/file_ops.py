@@ -19,7 +19,10 @@ class ListFilesTool(Tool):
         """
         super().__init__(
             name="list_files",
-            description="Liste les fichiers d'un répertoire",
+            description=(
+                "Liste les fichiers d'un répertoire. "
+                "IMPORTANT: Utiliser recursive=True pour inclure les sous-répertoires."
+            ),
             parameters={
                 "type": "object",
                 "properties": {
@@ -29,12 +32,23 @@ class ListFilesTool(Tool):
                     },
                     "recursive": {
                         "type": "boolean",
-                        "description": "Inclure les sous-répertoires",
+                        "description": (
+                            "Si True, parcourt tous les sous-répertoires récursivement. "
+                            "Si False (défaut), liste uniquement le répertoire spécifié."
+                        ),
                         "default": False,
                     },
                     "pattern": {
                         "type": "string",
                         "description": "Pattern glob (ex: *.py)",
+                    },
+                    "include_ignored": {
+                        "type": "boolean",
+                        "description": (
+                            "Si True, inclut les répertoires normalement ignorés (.venv, node_modules, .git, etc.). "
+                            "Par défaut False."
+                        ),
+                        "default": False,
                     },
                 },
             },
@@ -43,7 +57,8 @@ class ListFilesTool(Tool):
         self.sandbox = sandbox
 
     async def execute(
-        self, path: str = ".", recursive: bool = False, pattern: str | None = None
+        self, path: str = ".", recursive: bool = False, pattern: str | None = None,
+        include_ignored: bool = False
     ) -> dict[str, Any]:
         """Liste les fichiers."""
         try:
@@ -57,10 +72,15 @@ class ListFilesTool(Tool):
 
             # Lister les fichiers
             files = []
+            ignored_count = 0
             if recursive:
                 glob_pattern = "**/*" if not pattern else f"**/{pattern}"
                 for item in dir_path.glob(glob_pattern):
                     if item.is_file():
+                        # Ignorer les chemins configurés sauf si include_ignored=True
+                        if not include_ignored and self.sandbox.should_ignore(item):
+                            ignored_count += 1
+                            continue
                         files.append(str(item.relative_to(self.sandbox.root)))
             else:
                 for item in dir_path.iterdir():
@@ -68,7 +88,11 @@ class ListFilesTool(Tool):
                         if not pattern or fnmatch.fnmatch(item.name, pattern):
                             files.append(str(item.relative_to(self.sandbox.root)))
 
-            return {"success": True, "files": sorted(files), "count": len(files)}
+            result = {"success": True, "files": sorted(files), "count": len(files)}
+            if ignored_count > 0:
+                result["ignored_count"] = ignored_count
+                result["note"] = f"{ignored_count} fichiers ignorés (.venv, node_modules, etc.)"
+            return result
 
         except Exception as e:
             return {"success": False, "error": str(e)}

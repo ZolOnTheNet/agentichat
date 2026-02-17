@@ -41,9 +41,17 @@ class GlobTool(Tool):
                     "exclude": {
                         "type": "string",
                         "description": (
-                            "Pattern à exclure (optionnel). Exemples: '**/node_modules/**', "
-                            "'**/__pycache__/**'"
+                            "Pattern additionnel à exclure (optionnel). Exemples: '**/tests/**', "
+                            "'**/docs/**'. Note: .venv, node_modules, .git sont déjà exclus par défaut."
                         ),
+                    },
+                    "include_ignored": {
+                        "type": "boolean",
+                        "description": (
+                            "Si True, inclut les répertoires normalement ignorés (.venv, node_modules, .git, etc.). "
+                            "Par défaut False."
+                        ),
+                        "default": False,
                     },
                 },
                 "required": ["pattern"],
@@ -53,7 +61,8 @@ class GlobTool(Tool):
         self.sandbox = sandbox
 
     async def execute(
-        self, pattern: str, path: str = ".", exclude: str | None = None
+        self, pattern: str, path: str = ".", exclude: str | None = None,
+        include_ignored: bool = False
     ) -> dict[str, Any]:
         """Recherche des fichiers par pattern glob."""
         try:
@@ -67,14 +76,20 @@ class GlobTool(Tool):
 
             # Rechercher les fichiers
             matches = []
+            ignored_count = 0
             for item in search_dir.glob(pattern):
-                # Vérifier l'exclusion
+                # Vérifier l'exclusion utilisateur
                 if exclude and item.match(exclude):
                     continue
 
                 # Ajouter seulement les fichiers (pas les répertoires)
                 if item.is_file():
                     try:
+                        # Ignorer les chemins configurés sauf si include_ignored=True
+                        if not include_ignored and self.sandbox.should_ignore(item):
+                            ignored_count += 1
+                            continue
+
                         rel_path = item.relative_to(self.sandbox.root)
                         matches.append(str(rel_path))
                     except ValueError:
@@ -84,13 +99,17 @@ class GlobTool(Tool):
             # Trier les résultats
             matches.sort()
 
-            return {
+            result = {
                 "success": True,
                 "matches": matches,
                 "count": len(matches),
                 "pattern": pattern,
                 "search_dir": path,
             }
+            if ignored_count > 0:
+                result["ignored_count"] = ignored_count
+                result["note"] = f"{ignored_count} fichiers ignorés (.venv, node_modules, etc.)"
+            return result
 
         except Exception as e:
             return {"success": False, "error": str(e)}

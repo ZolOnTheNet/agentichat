@@ -33,6 +33,33 @@ class SandboxConfig:
             "**/credentials.json",
         ]
     )
+    ignored_paths: list[str] = field(
+        default_factory=lambda: [
+            # Environnements virtuels Python
+            "**/.venv/**",
+            "**/venv/**",
+            "**/env/**",
+            "**/.virtualenv/**",
+            # Dépendances Node.js
+            "**/node_modules/**",
+            # Contrôle de version
+            "**/.git/**",
+            # Caches Python
+            "**/__pycache__/**",
+            "**/.pytest_cache/**",
+            "**/.mypy_cache/**",
+            "**/.ruff_cache/**",
+            # Build artifacts
+            "**/build/**",
+            "**/dist/**",
+            "**/*.egg-info/**",
+            # IDEs
+            "**/.vscode/**",
+            "**/.idea/**",
+            # Autres
+            "**/.DS_Store",
+        ]
+    )
     allowed_commands: list[str] | None = None  # None = tout autorisé
 
 
@@ -150,6 +177,18 @@ def validate_config(config: dict[str, Any]) -> Config:
                 "**/*.pem",
                 "**/id_rsa",
                 "**/credentials.json",
+            ],
+        ),
+        ignored_paths=sandbox_data.get(
+            "ignored_paths",
+            [
+                "**/.venv/**", "**/venv/**", "**/env/**", "**/.virtualenv/**",
+                "**/node_modules/**",
+                "**/.git/**",
+                "**/__pycache__/**", "**/.pytest_cache/**", "**/.mypy_cache/**", "**/.ruff_cache/**",
+                "**/build/**", "**/dist/**", "**/*.egg-info/**",
+                "**/.vscode/**", "**/.idea/**",
+                "**/.DS_Store",
             ],
         ),
         allowed_commands=sandbox_data.get("allowed_commands"),

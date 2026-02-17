@@ -73,7 +73,7 @@ sandbox:
   # Taille maximale d'un fichier (en octets)
   max_file_size: 1000000  # 1 MB
 
-  # Chemins bloqués (patterns glob)
+  # Chemins bloqués (accès refusé pour sécurité)
   blocked_paths:
     - "**/.env"
     - "**/*.key"
@@ -81,6 +81,38 @@ sandbox:
     - "**/id_rsa"
     - "**/credentials.json"
     - "**/.ssh/*"
+
+  # Répertoires ignorés lors des recherches récursives (list_files, search_text, glob_search)
+  # Améliore les performances en évitant de parcourir des milliers de fichiers inutiles
+  # Utilisez include_ignored=True dans les tools pour forcer l'inclusion
+  # Voir: /help sandbox
+  ignored_paths:
+    # Environnements virtuels Python
+    - "**/.venv/**"
+    - "**/venv/**"
+    - "**/env/**"
+    - "**/.virtualenv/**"
+    # Dépendances Node.js
+    - "**/node_modules/**"
+    # Contrôle de version
+    - "**/.git/**"
+    # Caches Python
+    - "**/__pycache__/**"
+    - "**/.pytest_cache/**"
+    - "**/.mypy_cache/**"
+    - "**/.ruff_cache/**"
+    # Build artifacts
+    - "**/build/**"
+    - "**/dist/**"
+    - "**/*.egg-info/**"
+    # IDEs
+    - "**/.vscode/**"
+    - "**/.idea/**"
+    # Autres
+    - "**/.DS_Store"
+    # Ajoutez vos patterns personnalisés ici :
+    # - "**/mes-donnees-test/**"
+    # - "**/tmp/**"
 
   # Commandes autorisées (null = toutes autorisées)
   # allowed_commands:

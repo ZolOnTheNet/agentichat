@@ -19,7 +19,10 @@ class SearchTextTool(Tool):
         """
         super().__init__(
             name="search_text",
-            description="Recherche textuelle dans les fichiers (grep-like)",
+            description=(
+                "Recherche textuelle dans les fichiers (grep-like). "
+                "Parcourt AUTOMATIQUEMENT tous les sous-répertoires de manière récursive."
+            ),
             parameters={
                 "type": "object",
                 "properties": {
@@ -29,7 +32,10 @@ class SearchTextTool(Tool):
                     },
                     "path": {
                         "type": "string",
-                        "description": "Répertoire de recherche (défaut: .)",
+                        "description": (
+                            "Répertoire de départ pour la recherche récursive (défaut: .). "
+                            "La recherche inclura automatiquement tous les sous-répertoires."
+                        ),
                         "default": ".",
                     },
                     "regex": {
@@ -40,6 +46,14 @@ class SearchTextTool(Tool):
                     "case_sensitive": {
                         "type": "boolean",
                         "description": "Sensible à la casse",
+                        "default": False,
+                    },
+                    "include_ignored": {
+                        "type": "boolean",
+                        "description": (
+                            "Si True, inclut les répertoires normalement ignorés (.venv, node_modules, .git, etc.). "
+                            "Par défaut False."
+                        ),
                         "default": False,
                     },
                 },
@@ -55,6 +69,7 @@ class SearchTextTool(Tool):
         path: str = ".",
         regex: bool = False,
         case_sensitive: bool = False,
+        include_ignored: bool = False,
     ) -> dict[str, Any]:
         """Recherche le texte dans les fichiers."""
         try:
@@ -78,6 +93,7 @@ class SearchTextTool(Tool):
 
             # Rechercher dans les fichiers
             matches = []
+            ignored_count = 0
 
             # Si c'est un fichier unique
             if search_path.is_file():
@@ -89,6 +105,11 @@ class SearchTextTool(Tool):
                 for file_path in search_path.rglob("*"):
                     if file_path.is_file():
                         try:
+                            # Ignorer les chemins configurés sauf si include_ignored=True
+                            if not include_ignored and self.sandbox.should_ignore(file_path):
+                                ignored_count += 1
+                                continue
+
                             # Vérifier la taille
                             self.sandbox.validate_size(file_path)
 
@@ -99,12 +120,16 @@ class SearchTextTool(Tool):
                             # Ignorer les fichiers qui posent problème
                             continue
 
-            return {
+            result = {
                 "success": True,
                 "query": query,
                 "matches": matches,
                 "count": len(matches),
             }
+            if ignored_count > 0:
+                result["ignored_count"] = ignored_count
+                result["note"] = f"{ignored_count} fichiers ignorés (.venv, node_modules, etc.)"
+            return result
 
         except Exception as e:
             return {"success": False, "error": str(e)}

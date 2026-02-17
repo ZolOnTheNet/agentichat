@@ -228,6 +228,7 @@ class ChatApp:
             config={
                 "max_file_size": self.config.sandbox.max_file_size,
                 "blocked_paths": self.config.sandbox.blocked_paths,
+                "ignored_paths": self.config.sandbox.ignored_paths,
             },
         )
         self.console.print(f"[dim]Workspace: {workspace_root}[/dim]")
@@ -997,10 +998,22 @@ class ChatApp:
             backend_type = backend_config.type
             model = self.backend.model
 
-            # Raccourcir le nom du modèle si trop long
+            # Raccourcir le nom du modèle si trop long (prioriser la FIN qui est plus précise)
             model_short = model.split(":")[0] if ":" in model else model
-            if len(model_short) > 15:
-                model_short = model_short[:12] + "..."
+            max_len = 40  # Limite raisonnable pour la barre
+
+            if len(model_short) > max_len:
+                # Garder le préfixe (provider) et la fin (version précise)
+                if "/" in model_short:
+                    provider = model_short.split("/")[0]
+                    # Calculer combien de caractères on peut garder pour la fin
+                    remaining = max_len - len(provider) - 4  # -4 pour "/..."
+                    suffix = model_short[-remaining:] if remaining > 0 else model_short[-10:]
+                    model_short = f"{provider}/...{suffix}"
+                else:
+                    # Pas de provider, juste garder la fin
+                    model_short = "..." + model_short[-(max_len-3):]
+
             parts.append(f"{backend_type}:{model_short}")
 
         # Créer la ligne d'information avec séparateurs
@@ -1032,19 +1045,27 @@ class ChatApp:
 - `/clear` - Réinitialiser la conversation (efface la sauvegarde)
 - `/save` - Sauvegarder la discussion
 - `/history` - Afficher l'historique complet
-- `/history compress` - Afficher le message compressé
 - `/info` - Statistiques de la session
 - `/compress` - Compresser l'historique
 - `/compile` - Compiler les consignes AGENTICHAT.md
 - `/model` - Afficher le modèle actif
 - `/! <cmd>` - Exécuter une commande shell
 
+## Changer de Backend / Modèle
+```
+/config backend list          → Voir les backends (et modèle actif)
+/config backend ollama        → Passer sur Ollama (session)
+/config backend albert        → Passer sur Albert (session)
+/config backend save          → Sauvegarder dans config.yaml (permanent)
+```
+
 ## Topics Disponibles
 Tapez `/help <topic>` pour plus d'informations :
 
 - **compress** - Compression de conversation et gestion mémoire
 - **compile** - Compilation des consignes utilisateur (AGENTICHAT.md)
-- **config** - Configuration de l'application
+- **config** - Configuration et changement de backend
+- **sandbox** - Répertoires ignorés et configuration des recherches
 - **history** - Sauvegarde et historique des discussions
 - **log** - Visualisation et recherche dans les logs
 - **ollama** - Commandes pour backend Ollama
@@ -1065,7 +1086,7 @@ Tapez `/help <topic>` pour plus d'informations :
 > Cherche "TODO" dans tout le projet
 ```
 
-💡 **Astuce:** Tapez `/help compress` pour optimiser votre usage de tokens !
+💡 **Astuce:** Tapez `/help config` pour la gestion des backends et modèles !
 """
         self.console.print(Markdown(help_text))
 
@@ -1200,13 +1221,33 @@ Puis lancez `/compile` pour optimiser et charger dans la conversation.
 
 ## Commandes
 
+### /config init
+Initialise l'environnement agentichat dans le répertoire courant.
+
+**Comportement :**
+- `/config init` - Crée config.yaml SEULEMENT s'il n'existe pas
+  - Crée `.agentichat/` si nécessaire
+  - Préserve config.yaml existant
+  - Ne touche PAS aux autres fichiers (db, log, history)
+
+- `/config init --force` - Réinitialise config.yaml (écrase l'existant)
+  - Remet la configuration aux valeurs par défaut
+  - ⚠️ ATTENTION : Écrase votre config personnalisée
+
+**Fichier créé :**
+- `.agentichat/config.yaml` - Configuration complète (backends, sandbox, ignored_paths, etc.)
+
 ### /config show
 Affiche la configuration actuelle (backend, modèle, debug, etc.)
 
 ### /config backend
 Gestion des backends LLM.
-- `/config backend list` - Liste les backends configurés
-- `/config backend <nom>` - Change de backend
+- `/config backend list` - Liste les backends configurés (avec modèle actif)
+- `/config backend <nom>` - Change de backend pour la session en cours
+- `/config backend save` - Sauvegarde le backend et le modèle actuel dans config.yaml
+
+**Note:** Le changement de backend est temporaire (session uniquement).
+Utilisez `save` pour le rendre permanent.
 
 ### /config debug
 Active/désactive les logs détaillés.
@@ -1228,6 +1269,16 @@ Voir `/help compile` pour plus de détails.
 - Global (utilisateur): `~/.agentichat/config.yaml`
 
 Utilisez `nano ~/.agentichat/config.yaml` pour éditer.
+
+## Sections Configurables
+
+- **backends** - Configuration des LLM (Ollama, Albert)
+- **sandbox** - Sécurité et répertoires ignorés (voir `/help sandbox`)
+- **confirmations** - Confirmations pour opérations sensibles
+- **compression** - Auto-compression de conversation
+- **guidelines** - Chargement des consignes AGENTICHAT.md
+
+💡 **Voir aussi:** `/help sandbox` pour les répertoires ignorés
 """,
             "log": """
 # Logs
@@ -1485,6 +1536,142 @@ Lors d'une confirmation (mode Ask) :
 Affiche : workspace, debug, **Conf:mode**, backend/modèle
 Toggle avec `/prompt toggle`
 """,
+            "sandbox": """
+# Sandbox et Répertoires Ignorés
+
+## Qu'est-ce que c'est ?
+
+Le **sandbox** protège et optimise les recherches en :
+1. **Sécurité** - Bloque l'accès aux fichiers sensibles (.env, *.key, etc.)
+2. **Performance** - Ignore les répertoires inutiles (.venv, node_modules, etc.)
+
+## Répertoires Ignorés par Défaut
+
+Lors des recherches récursives (`list_files`, `search_text`, `glob_search`),
+ces répertoires sont **automatiquement ignorés** :
+
+### Environnements Python
+- `.venv/`, `venv/`, `env/`, `.virtualenv/`
+
+### Dépendances
+- `node_modules/` (Node.js)
+
+### Contrôle de version
+- `.git/`
+
+### Caches Python
+- `__pycache__/`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`
+
+### Build artifacts
+- `build/`, `dist/`, `*.egg-info/`
+
+### IDEs
+- `.vscode/`, `.idea/`
+
+### Autres
+- `.DS_Store` (macOS)
+
+## Comportement des Outils
+
+### Par défaut (Intelligent)
+```
+> Liste tous les fichiers Python dans les sous-répertoires
+
+Agent utilise: list_files(path=".", recursive=True, pattern="*.py")
+Résultat: 42 fichiers trouvés, 2680 fichiers ignorés (.venv, node_modules, etc.)
+```
+
+### Forcer l'inclusion
+```
+> Liste TOUS les fichiers Python, y compris dans .venv
+
+Agent utilise: list_files(path=".", recursive=True, pattern="*.py", include_ignored=True)
+Résultat: 2722 fichiers trouvés (inclut .venv)
+```
+
+## Configuration Personnalisée
+
+### Initialisation Rapide
+
+```bash
+# Dans agentichat
+/config init
+
+# Ou en ligne de commande
+agentichat --init
+```
+
+Cela crée `.agentichat/config.yaml` avec tous les `ignored_paths` par défaut.
+
+### Fichier: `.agentichat/config.yaml`
+
+```yaml
+sandbox:
+  # Taille max des fichiers (1 MB par défaut)
+  max_file_size: 1000000
+
+  # Fichiers bloqués (sécurité)
+  blocked_paths:
+    - "**/.env"
+    - "**/*.key"
+    - "**/*.pem"
+    - "**/id_rsa"
+    - "**/credentials.json"
+
+  # Répertoires ignorés (performance)
+  ignored_paths:
+    # Par défaut (Python, Node.js, Git, Caches, Build)
+    - "**/.venv/**"
+    - "**/node_modules/**"
+    - "**/.git/**"
+    - "**/__pycache__/**"
+    - "**/build/**"
+    - "**/dist/**"
+
+    # Ajoutez vos patterns personnalisés
+    - "**/mes-donnees-test/**"
+    - "**/tmp/**"
+```
+
+### Fichier Global: `~/.agentichat/config.yaml`
+
+Configuration partagée entre tous vos projets.
+
+## Exemples Pratiques
+
+### Rechercher sans .venv (défaut)
+```
+> Cherche "TODO" dans tous les fichiers Python
+→ Ignore automatiquement .venv/
+```
+
+### Inclure .venv si nécessaire
+```
+> Cherche "import numpy" dans TOUS les fichiers, y compris .venv
+→ L'agent devrait utiliser include_ignored=True
+```
+
+### Personnaliser les exclusions
+```yaml
+# Dans .agentichat/config.yaml
+sandbox:
+  ignored_paths:
+    - "**/.venv/**"      # Garder les défauts
+    - "**/node_modules/**"
+    - "**/data/raw/**"   # Ajouter vos patterns
+    - "**/experiments/**"
+```
+
+## Notes
+
+- Les patterns utilisent la syntaxe glob (`**` = récursif, `*` = wildcard)
+- `blocked_paths` → **Accès refusé** (sécurité)
+- `ignored_paths` → **Ignoré par défaut** dans les recherches (performance)
+- Paramètre `include_ignored=True` pour forcer l'inclusion temporairement
+
+💡 **Astuce:** Si une recherche prend trop de temps, vérifiez qu'elle n'explore
+pas .venv ou node_modules !
+""",
         }
 
         if topic in topics:
@@ -1493,7 +1680,7 @@ Toggle avec `/prompt toggle`
             self.console.print(
                 f"[yellow]Topic '{topic}' inconnu.[/yellow]\n\n"
                 "[bold]Topics disponibles:[/bold]\n"
-                "  compress, compile, config, history, log, ollama, albert, prompt, tools, shortcuts\n\n"
+                "  compress, compile, config, sandbox, history, log, ollama, albert, prompt, tools, shortcuts\n\n"
                 "[dim]Utilisez /help <topic> pour afficher l'aide détaillée.[/dim]\n"
             )
 
@@ -1524,17 +1711,51 @@ Toggle avec `/prompt toggle`
                 # Lister les backends disponibles
                 self.console.print("\n[bold cyan]=== Backends configurés ===")
                 for name, backend_config in self.config.backends.items():
-                    # Marquer le backend actuel
                     marker = "[bold green]●[/bold green]" if name == self.config.default_backend else " "
+                    # Afficher le modèle actif si c'est le backend courant
+                    active_model = backend_config.model
+                    if name == self.config.default_backend and self.backend:
+                        active_model = self.backend.model
                     self.console.print(
-                        f"{marker} {name:15} ({backend_config.type:8}) - {backend_config.url}"
+                        f"{marker} {name:15} ({backend_config.type:8}) - {active_model}"
                     )
                 self.console.print(
                     f"\n[dim]Backend actuel: {self.config.default_backend}[/dim]"
                 )
                 self.console.print(
-                    "[dim]Utilisation: /config backend <nom>[/dim]\n"
+                    "[dim]Utilisation: /config backend <nom> | /config backend save[/dim]\n"
                 )
+            elif len(parts) == 3 and parts[2] == "save":
+                # Sauvegarder le backend et le modèle actuel dans config.yaml
+                if not self.backend:
+                    self.console.print("[red]Erreur: Aucun backend actif[/red]\n")
+                    return
+
+                backend_name = self.config.default_backend
+                current_model = self.backend.model
+
+                # Mettre à jour le modèle dans la config (en mémoire)
+                if backend_name in self.config.backends:
+                    self.config.backends[backend_name].model = current_model
+
+                # Sauvegarder dans config.yaml
+                try:
+                    save_config(self.config)
+                    config_path = get_config_path()
+                    self.console.print(
+                        f"[bold green]✓[/bold green] Sauvegardé dans {config_path}\n"
+                        f"[dim]default_backend: {backend_name}[/dim]\n"
+                        f"[dim]model: {current_model}[/dim]\n"
+                    )
+                    logger.info(
+                        f"Saved backend={backend_name}, model={current_model} to {config_path}"
+                    )
+                except Exception as e:
+                    self.console.print(
+                        f"[bold red]Erreur:[/bold red] Impossible de sauvegarder: {e}\n"
+                    )
+                    logger.error(f"Failed to save backend config: {e}")
+
             elif len(parts) >= 3:
                 # Changer de backend
                 backend_name = parts[2]
@@ -1723,13 +1944,23 @@ Toggle avec `/prompt toggle`
                     "                                  (confirm, auto, off)\n"
                 )
 
+        elif len(parts) >= 2 and parts[1] == "init":
+            # Initialiser l'environnement agentichat
+            from ..main import initialize_workspace
+
+            force = "--force" in parts
+            initialize_workspace(force=force)
+
         else:
             # Commande invalide
             self.console.print(
                 "[bold yellow]Commandes /config disponibles:[/bold yellow]\n"
                 "  /config show                        - Affiche la configuration actuelle\n"
+                "  /config init                        - Initialise l'environnement agentichat\n"
+                "  /config init --force                - Réinitialise l'environnement\n"
                 "  /config backend list                - Liste les backends disponibles\n"
                 "  /config backend <nom>               - Change de backend\n"
+                "  /config backend save                - Sauvegarde le backend et modèle actuel\n"
                 "  /config debug on                    - Active le mode debug\n"
                 "  /config debug off                   - Désactive le mode debug\n"
                 "  /config compress                    - Configure la compression de conversation\n"
