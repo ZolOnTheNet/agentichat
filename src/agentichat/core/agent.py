@@ -156,11 +156,16 @@ class AgentLoop:
         """
         tool = self.registry.get(tool_call.name)
 
-        # Tool introuvable
+        # Tool introuvable - inclure la liste des tools valides pour guider le modèle
         if not tool:
+            available = ", ".join(sorted(t.name for t in self.registry.list_tools()))
             return {
                 "success": False,
-                "error": f"Tool '{tool_call.name}' introuvable",
+                "error": (
+                    f"Tool '{tool_call.name}' introuvable. "
+                    f"Outils disponibles : {available}. "
+                    "Utilisez exactement l'un de ces noms."
+                ),
             }
 
         # Demander confirmation si nécessaire

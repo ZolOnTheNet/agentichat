@@ -70,24 +70,46 @@ class OllamaBackend(Backend):
 
         # Parser chaque objet JSON trouvé
         for json_str in json_objects:
+            data = None
+
+            # Tentative 1 : parsing JSON direct
             try:
                 data = json.loads(json_str)
-                if isinstance(data, dict) and "name" in data:
-                    # Supporter "arguments" et "parameters" (certains modèles utilisent parameters)
-                    arguments = data.get("arguments") or data.get("parameters") or {}
-                    if not isinstance(arguments, dict):
-                        arguments = {}
+            except json.JSONDecodeError:
+                pass
 
-                    tool_call = ToolCall(
-                        id=str(uuid.uuid4()),
-                        name=data["name"],
-                        arguments=arguments,
-                    )
-                    tool_calls.append(tool_call)
-                    logger.info(f"Extracted tool call from text: {data['name']}")
-            except (json.JSONDecodeError, TypeError) as e:
-                logger.debug(f"Failed to parse JSON: {json_str[:100]}... Error: {e}")
+            # Tentative 2 : corriger les backslashes non échappés (regex dans JSON)
+            # ex: \s+ → \\s+, \d+ → \\d+, \. → \\.
+            if data is None:
+                try:
+                    fixed = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', json_str)
+                    data = json.loads(fixed)
+                    logger.debug("Parsed JSON after fixing unescaped backslashes")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            if data is None:
+                logger.debug(f"Failed to parse JSON: {json_str[:100]}...")
                 continue
+
+            if isinstance(data, dict) and "name" in data:
+                # Valider que le tool call a un nom non vide
+                tool_name = data.get("name", "").strip()
+                if not tool_name:
+                    continue
+
+                # Supporter "arguments" et "parameters" (certains modèles utilisent parameters)
+                arguments = data.get("arguments") or data.get("parameters") or {}
+                if not isinstance(arguments, dict):
+                    arguments = {}
+
+                tool_call = ToolCall(
+                    id=str(uuid.uuid4()),
+                    name=tool_name,
+                    arguments=arguments,
+                )
+                tool_calls.append(tool_call)
+                logger.info(f"Extracted tool call from text: {tool_name}")
 
         return tool_calls if tool_calls else None
 
@@ -297,14 +319,18 @@ class OllamaBackend(Backend):
             )
 
         # Stocker les statistiques détaillées pour affichage
+        prompt_tokens = data.get("prompt_eval_count", 0)
+        completion_tokens = data.get("eval_count", 0)
         self.last_usage = {
-            "prompt_tokens": data.get("prompt_eval_count", 0),
-            "completion_tokens": data.get("eval_count", 0),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
             "prompt_eval_duration_ms": data.get("prompt_eval_duration", 0) / 1_000_000,  # ns -> ms
             "eval_duration_ms": data.get("eval_duration", 0) / 1_000_000,  # ns -> ms
             "total_duration_ms": data.get("total_duration", 0) / 1_000_000,  # ns -> ms
             "load_duration_ms": data.get("load_duration", 0) / 1_000_000,  # ns -> ms
         }
+        # Accumuler dans le compteur cumulatif
+        self._accumulate_usage(prompt_tokens, completion_tokens)
 
         return ChatResponse(
             content=content, tool_calls=tool_calls, finish_reason=finish_reason, usage=usage

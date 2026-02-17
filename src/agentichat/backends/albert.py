@@ -501,6 +501,8 @@ class AlbertBackend(Backend):
                 "completion_tokens": usage.completion_tokens,
                 "total_tokens": usage.total_tokens,
             }
+            # Accumuler dans le compteur cumulatif
+            self._accumulate_usage(usage.prompt_tokens, usage.completion_tokens)
 
         return ChatResponse(
             content=content,

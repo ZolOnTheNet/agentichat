@@ -61,6 +61,34 @@ class Backend(ABC):
         self.temperature = kwargs.get("temperature", 0.7)
         self.api_key = kwargs.get("api_key")
         self.max_parallel_tools = kwargs.get("max_parallel_tools")  # None = illimité
+        # Compteurs cumulatifs pour la requête en cours (reset avant chaque agent.run)
+        self.cumulative_usage: dict = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "api_calls": 0,
+        }
+
+    def reset_cumulative_usage(self) -> None:
+        """Remet à zéro les compteurs cumulatifs (à appeler avant chaque agent.run)."""
+        self.cumulative_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "api_calls": 0,
+        }
+
+    def _accumulate_usage(self, prompt_tokens: int, completion_tokens: int) -> None:
+        """Accumule les tokens dans le compteur cumulatif.
+
+        Args:
+            prompt_tokens: Tokens du prompt de cet appel
+            completion_tokens: Tokens de la réponse de cet appel
+        """
+        self.cumulative_usage["prompt_tokens"] += prompt_tokens
+        self.cumulative_usage["completion_tokens"] += completion_tokens
+        self.cumulative_usage["total_tokens"] += prompt_tokens + completion_tokens
+        self.cumulative_usage["api_calls"] += 1
 
     def _limit_tool_calls(self, tool_calls: list[ToolCall] | None) -> list[ToolCall] | None:
         """Limite le nombre de tool calls selon max_parallel_tools.

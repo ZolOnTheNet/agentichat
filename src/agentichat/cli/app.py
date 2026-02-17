@@ -2,6 +2,7 @@
 
 import asyncio
 import pickle
+import re
 import signal
 import time
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.text import Text
 
@@ -654,6 +656,11 @@ class ChatApp:
                     await self._handle_compile_command()
                     continue
 
+                # Commande /tools
+                if user_input.startswith("/tools"):
+                    await self._handle_tools_command(user_input)
+                    continue
+
                 # Commande /! pour exécuter directement une commande shell
                 if user_input.startswith("/!"):
                     await self._handle_shell_command(user_input)
@@ -733,10 +740,260 @@ class ChatApp:
                     "[bold]/config compress[/bold] pour configurer[/dim]\n"
                 )
 
+    def _display_token_stats(self, elapsed_total: float) -> None:
+        """Affiche les statistiques de tokens cumulatifs de la requête en cours."""
+        if not (self.backend and hasattr(self.backend, 'cumulative_usage')):
+            return
+        cum = self.backend.cumulative_usage
+        total_tokens = cum.get("total_tokens", 0)
+        if total_tokens > 0:
+            prompt_tokens = cum.get("prompt_tokens", 0)
+            completion_tokens = cum.get("completion_tokens", 0)
+            api_calls = cum.get("api_calls", 0)
+            calls_info = f" │ {api_calls} appel{'s' if api_calls > 1 else ''} API" if api_calls > 1 else ""
+            self.console.print(
+                f"\n[dim]Terminé en {elapsed_total:.1f}s │ "
+                f"[bold]{total_tokens:,}[/bold] tokens envoyés "
+                f"({prompt_tokens:,} prompt + {completion_tokens:,} réponse)"
+                f"{calls_info}[/dim]"
+            )
+
+    async def _handle_tools_command(self, command: str) -> None:
+        """Gère les commandes /tools."""
+        parts = command.strip().split()
+        subcommand = parts[1] if len(parts) > 1 else "list"
+
+        if subcommand == "list":
+            # Lister tous les tools disponibles
+            tools = self.registry.list_tools()
+            if not tools:
+                self.console.print("[yellow]Aucun tool disponible.[/yellow]")
+                return
+            self.console.print(f"\n[bold]Tools disponibles ({len(tools)} au total):[/bold]\n")
+            for tool in sorted(tools, key=lambda t: t.name):
+                desc = f"  [dim]{tool.description[:70]}[/dim]" if tool.description else ""
+                self.console.print(f"  [cyan]{tool.name}[/cyan]{desc}")
+            self.console.print()
+
+        elif subcommand == "test":
+            await self._test_tool_support()
+
+        else:
+            self.console.print(
+                "\n[bold]Commandes /tools :[/bold]\n"
+                "  [cyan]/tools list[/cyan]   - Liste tous les tools disponibles\n"
+                "  [cyan]/tools test[/cyan]   - Teste la capacité du modèle à utiliser les tools\n"
+            )
+
+    async def _test_tool_support(self) -> None:
+        """Teste la capacité du modèle à utiliser les tools correctement."""
+        if not self.backend:
+            self.console.print("[red]Pas de backend actif.[/red]")
+            return
+        if not self.registry.list_tools():
+            self.console.print("[red]Aucun tool enregistré.[/red]")
+            return
+
+        model_name = self.backend.model
+        self.console.print(
+            f"\n[bold cyan]🔧 Diagnostic tool calling — modèle: {model_name}[/bold cyan]\n"
+        )
+
+        # Test 1 : appel d'un tool simple connu
+        self.console.print("[dim]Test 1/2 : appel direct d'un tool connu (list_files)...[/dim]")
+        test_msg = Message(
+            role="user",
+            content=(
+                "[DIAGNOSTIC AUTOMATIQUE — NE PAS RÉPONDRE EN TEXTE]\n"
+                "Appelle le tool 'list_files' avec l'argument path='.'. "
+                "Fais-le immédiatement sans expliquer ni ajouter de texte."
+            ),
+        )
+        try:
+            response1 = await self.backend.chat(
+                messages=[test_msg],
+                tools=self.registry.to_schemas(),
+                stream=False,
+            )
+        except Exception as e:
+            self.console.print(f"[red]Erreur réseau pendant le test: {e}[/red]")
+            return
+
+        known_tools = {t.name for t in self.registry.list_tools()}
+        level = self._analyze_tool_response(response1, expected_tool="list_files", known_tools=known_tools)
+
+        # Test 2 : question sur les tools disponibles (doit répondre en texte)
+        self.console.print("[dim]Test 2/2 : auto-description des tools disponibles...[/dim]")
+        test_msg2 = Message(
+            role="user",
+            content="Quels outils (tools) as-tu à ta disposition ? Liste leurs noms uniquement.",
+        )
+        try:
+            response2 = await self.backend.chat(
+                messages=[test_msg2],
+                tools=self.registry.to_schemas(),
+                stream=False,
+            )
+        except Exception as e:
+            response2 = None
+
+        # Compter combien de nos tools sont cités dans la réponse
+        tools_cited = 0
+        if response2 and response2.content:
+            for tool_name in known_tools:
+                if tool_name in response2.content:
+                    tools_cited += 1
+
+        # Afficher les résultats
+        self.console.print()
+        self.console.print("[bold]═══ Résultats du diagnostic ═══[/bold]\n")
+
+        # Résultat test 1
+        if level == "A":
+            self.console.print("[bold green]✅ TEST 1 — NIVEAU A : Tool calling natif parfait[/bold green]")
+            self.console.print(
+                "   Le modèle appelle les tools directement via l'API native.\n"
+                "   → Recommandé pour toutes les tâches agentiques complexes."
+            )
+        elif level == "B":
+            called = [tc.name for tc in (response1.tool_calls or [])]
+            self.console.print("[bold yellow]⚠ TEST 1 — NIVEAU B : Tool calling partiel[/bold yellow]")
+            self.console.print(
+                f"   Le modèle a appelé un tool valide mais pas le bon: {called}\n"
+                "   → Fonctionnel mais peut se tromper de tool sur des tâches complexes."
+            )
+        elif level == "C":
+            called = [tc.name for tc in (response1.tool_calls or [])]
+            self.console.print("[bold red]❌ TEST 1 — NIVEAU C : Tools inventés[/bold red]")
+            self.console.print(
+                f"   Le modèle a appelé des tools inexistants: {called}\n"
+                f"   Tools valides: {', '.join(sorted(known_tools)[:6])}...\n"
+                "   → Le modèle ne connaît pas notre convention de nommage."
+            )
+        elif level == "D":
+            self.console.print("[bold red]❌ TEST 1 — NIVEAU D : Explique au lieu d'agir[/bold red]")
+            self.console.print(
+                "   Le modèle génère du texte sur les tools au lieu de les appeler.\n"
+                "   → Incompatible avec les tâches agentiques (fichiers, web, shell)."
+            )
+            # Montrer un extrait de la réponse
+            if response1.content:
+                excerpt = response1.content[:300].replace("[", "\\[").replace("]", "\\]")
+                self.console.print(Panel(excerpt + "...", title="Extrait réponse", border_style="red"))
+        else:
+            self.console.print("[bold red]❌ TEST 1 — NIVEAU E : Aucun tool utilisé[/bold red]")
+            self.console.print(
+                "   Le modèle ignore complètement les tools disponibles.\n"
+                "   → Incompatible avec le mode agentique."
+            )
+
+        # Résultat test 2
+        self.console.print()
+        pct = int(tools_cited / len(known_tools) * 100) if known_tools else 0
+        if pct >= 70:
+            self.console.print(f"[green]✅ TEST 2 — Connaissance des tools: {tools_cited}/{len(known_tools)} ({pct}%)[/green]")
+        elif pct >= 30:
+            self.console.print(f"[yellow]⚠ TEST 2 — Connaissance partielle: {tools_cited}/{len(known_tools)} ({pct}%)[/yellow]")
+        else:
+            self.console.print(f"[red]❌ TEST 2 — Mauvaise connaissance des tools: {tools_cited}/{len(known_tools)} ({pct}%)[/red]")
+
+        # Recommandations
+        self.console.print()
+        if level not in ("A", "B"):
+            self.console.print("[bold yellow]💡 Recommandations :[/bold yellow]")
+            if hasattr(self.backend, 'url') and 'localhost' in str(getattr(self.backend, 'url', '')):
+                # Ollama
+                self.console.print(
+                    "  Pour Ollama, privilégiez des modèles entraînés au tool calling :\n"
+                    "  • [cyan]/config backend set ollama qwen2.5:7b[/cyan]       (recommandé)\n"
+                    "  • [cyan]/config backend set ollama qwen2.5-coder:7b[/cyan] (code + tools)\n"
+                    "  • [cyan]/config backend set ollama llama3.1:8b[/cyan]\n"
+                    "  • [cyan]/config backend set ollama mistral-nemo:latest[/cyan]"
+                )
+            else:
+                # Albert ou autre
+                self.console.print(
+                    "  Essayez un modèle plus capable pour le tool calling :\n"
+                    "  • [cyan]/albert run meta-llama/Llama-3.1-70B-Instruct[/cyan]\n"
+                    "  • [cyan]/albert run mistralai/Mistral-Large-Instruct-2407[/cyan]"
+                )
+        else:
+            self.console.print("[green]✅ Ce modèle est compatible avec le mode agentique.[/green]")
+        self.console.print()
+
+    @staticmethod
+    def _analyze_tool_response(response, expected_tool: str, known_tools: set) -> str:
+        """Analyse la réponse du modèle lors d'un test de tool calling.
+
+        Returns:
+            'A' = perfect, 'B' = partial (wrong tool but valid), 'C' = invented tools,
+            'D' = explains instead of calling, 'E' = no tools at all
+        """
+        if response.tool_calls:
+            called = {tc.name for tc in response.tool_calls}
+            if expected_tool in called:
+                return "A"
+            if called & known_tools:
+                return "B"
+            return "C"
+
+        # Pas de tool calls : détecter si le modèle explique au lieu d'agir
+        content = response.content or ""
+        # JSON avec "name" dans le texte = tentative d'explication de tool call
+        if re.search(r'"name"\s*:\s*"[a-z_]+"', content):
+            return "D"
+        # Mots-clés d'explication
+        explain_patterns = [
+            r'you (can|should|need to|must) (call|use|invoke)',
+            r'(appel|utilise|invoke)[a-z]* (le |la |l\')?tool',
+            r'voici (comment|un exemple)',
+            r'here.s (how|an example)',
+            r'function\s*\([^)]*\)\s*\{',  # code JS
+        ]
+        if any(re.search(p, content, re.IGNORECASE) for p in explain_patterns):
+            return "D"
+        return "E"
+
+    @staticmethod
+    def _looks_like_tool_explanation(response_text: str, known_tools: set) -> bool:
+        """Détecte si la réponse ressemble à une explication de tool au lieu d'un appel.
+
+        Signaux positifs (le modèle explique) :
+        - JSON avec "name": "quelque_chose" dans des blocs de code
+        - Mentions de tool_name + verbes d'explication
+        - Patterns de code JS (data.group_by, etc.)
+        - Références à nos tools + contexte explicatif
+        """
+        # Ignorer les réponses très courtes (réponses légitimes sans tools)
+        if len(response_text) < 100:
+            return False
+
+        # Signal fort : blocs JSON avec "name" (tentative de montrer un appel)
+        if re.search(r'```[a-z]*\s*\{[^}]*"name"\s*:', response_text, re.DOTALL):
+            return True
+
+        # Signal fort : JSON en ligne avec "name" + "arguments"
+        if re.search(r'"name"\s*:\s*"[a-z_]+"\s*,\s*"(arguments|parameters)"', response_text):
+            return True
+
+        # Signal fort : patterns JS de méthodes chaînées (hallucination de tools)
+        if re.search(r'\.(group_by|sort_by|filter_by|sum|count)\s*\(', response_text):
+            return True
+
+        # Signal moyen : nos tool names + verbe d'explication dans la même phrase
+        for tool_name in known_tools:
+            pattern = rf"(appel|utilis|invoke|call|use)[a-z]* .*{tool_name}|{tool_name}.*(appel|utilis|invoke|call|use)"
+            if re.search(pattern, response_text, re.IGNORECASE):
+                return True
+
+        return False
+
     async def _process_agent_loop(self) -> None:
         """Exécute la boucle agentique et affiche les résultats."""
         if not self.agent:
             return
+
+        start_time = time.time()  # Avant le try pour être accessible dans les except
 
         try:
             # Message de début avec instruction d'annulation
@@ -744,7 +1001,6 @@ class ChatApp:
             self.console.print("[dim]Appuyez sur Ctrl+C pour annuler[/dim]\n")
 
             spinner = Spinner("dots", text="")
-            start_time = time.time()
 
             # Messages sympathiques variés
             friendly_messages = [
@@ -775,22 +1031,31 @@ class ChatApp:
                     friendly_msg = friendly_messages[message_index % len(friendly_messages)]
 
                     # Construire le message avec les stats réelles
-                    if self.backend and hasattr(self.backend, 'last_usage') and self.backend.last_usage:
-                        stats = self.backend.last_usage
-                        prompt_tokens = stats.get("prompt_tokens", 0)
-                        completion_tokens = stats.get("completion_tokens", 0)
-                        total_time = stats.get("total_duration_ms", 0)
+                    if self.backend and hasattr(self.backend, 'cumulative_usage') and self.backend.cumulative_usage.get("api_calls", 0) > 0:
+                        cum = self.backend.cumulative_usage
+                        api_calls = cum.get("api_calls", 0)
+                        total_tok = cum.get("total_tokens", 0)
+                        last_stats = getattr(self.backend, 'last_usage', {}) or {}
+                        total_time = last_stats.get("total_duration_ms", 0)
+                        last_completion = last_stats.get("completion_tokens", 0)
 
-                        # Calculer les tokens/sec si on a des données
-                        if total_time > 0 and completion_tokens > 0:
-                            tokens_per_sec = (completion_tokens / total_time) * 1000
+                        # Calculer les tokens/sec si on a des données Ollama
+                        if total_time > 0 and last_completion > 0:
+                            tokens_per_sec = (last_completion / total_time) * 1000
+                            tok_speed = f" │ {tokens_per_sec:.1f} tok/s"
+                        else:
+                            tok_speed = ""
+
+                        # Afficher le total cumulatif si plusieurs appels, sinon le dernier
+                        if api_calls > 1:
                             stats_text = (
-                                f"[dim]│ {prompt_tokens}+{completion_tokens} tok │ "
-                                f"{tokens_per_sec:.1f} tok/s │ {elapsed:.1f}s[/dim]"
+                                f"[dim]│ [bold]{total_tok:,}[/bold] tok ({api_calls} appels){tok_speed} │ {elapsed:.1f}s[/dim]"
                             )
                         else:
+                            last_prompt = last_stats.get("prompt_tokens", 0)
+                            last_compl = last_stats.get("completion_tokens", 0)
                             stats_text = (
-                                f"[dim]│ {prompt_tokens}+{completion_tokens} tok │ {elapsed:.1f}s[/dim]"
+                                f"[dim]│ {last_prompt}+{last_compl} tok{tok_speed} │ {elapsed:.1f}s[/dim]"
                             )
 
                         msg = f"[cyan]{friendly_msg}...[/cyan] {stats_text}"
@@ -810,6 +1075,10 @@ class ChatApp:
                     # Passer la référence au Live display au confirmation manager
                     if self.confirmation_manager:
                         self.confirmation_manager.live_display = live
+
+                    # Remettre à zéro les compteurs cumulatifs pour cette requête
+                    if self.backend and hasattr(self.backend, 'reset_cumulative_usage'):
+                        self.backend.reset_cumulative_usage()
 
                     # Exécuter l'agent
                     logger.debug("Starting agent loop")
@@ -838,18 +1107,7 @@ class ChatApp:
                     await self.db.save_message(msg)
 
             # Afficher les statistiques finales
-            elapsed_total = time.time() - start_time
-            if self.backend and hasattr(self.backend, 'last_usage') and self.backend.last_usage:
-                stats = self.backend.last_usage
-                prompt_tokens = stats.get("prompt_tokens", 0)
-                completion_tokens = stats.get("completion_tokens", 0)
-                total_tokens = prompt_tokens + completion_tokens
-
-                self.console.print(
-                    f"\n[dim]Terminé en {elapsed_total:.1f}s │ "
-                    f"{total_tokens} tokens total "
-                    f"({prompt_tokens} prompt + {completion_tokens} réponse)[/dim]"
-                )
+            self._display_token_stats(time.time() - start_time)
 
             # Afficher la réponse (si elle existe)
             if response:
@@ -866,13 +1124,27 @@ class ChatApp:
                         "reformuler votre demande[/dim]"
                     )
 
+                # Détection passive : le modèle a-t-il expliqué des tools au lieu de les appeler ?
+                known_tools = {t.name for t in self.registry.list_tools()}
+                if self._looks_like_tool_explanation(response, known_tools):
+                    self.console.print(
+                        "\n[dim yellow]⚠ Le modèle semble avoir expliqué comment utiliser les "
+                        "outils au lieu de les appeler directement.\n"
+                        "   → Tapez [bold]/tools test[/bold] pour diagnostiquer la compatibilité "
+                        "du modèle.[/dim yellow]"
+                    )
+
         except KeyboardInterrupt:
+            # Afficher les stats même en cas d'interruption
+            self._display_token_stats(time.time() - start_time)
             # Message d'annulation très visible
             self.console.print("\n")
             self.console.print("[bold red on black] ✗ ANNULÉ - Traitement interrompu (Ctrl+C) [/bold red on black]")
             self.console.print("[dim]Le LLM a été arrêté. Vous pouvez continuer avec une nouvelle demande.[/dim]\n")
             logger.info("Request cancelled by user with Ctrl+C")
         except BackendError as e:
+            # Afficher les stats avant le message d'erreur
+            self._display_token_stats(time.time() - start_time)
             # Erreur backend (potentiellement modèle invalide ou contrainte)
             error_msg = str(e)
 
@@ -941,6 +1213,8 @@ class ChatApp:
                 self.console.print("[dim]→ Vous pouvez continuer avec une nouvelle commande[/dim]\n")
 
         except Exception as e:
+            # Afficher les stats avant le message d'erreur
+            self._display_token_stats(time.time() - start_time)
             # Échapper le message d'erreur pour éviter les conflits de markup
             error_display = str(e).replace("[", "\\[").replace("]", "\\]")
             self.console.print(f"\n[bold red]Erreur:[/bold red] {error_display}")
@@ -1049,6 +1323,8 @@ class ChatApp:
 - `/compress` - Compresser l'historique
 - `/compile` - Compiler les consignes AGENTICHAT.md
 - `/model` - Afficher le modèle actif
+- `/tools list` - Lister les tools disponibles
+- `/tools test` - Tester la compatibilité tool calling du modèle
 - `/! <cmd>` - Exécuter une commande shell
 
 ## Changer de Backend / Modèle
@@ -1067,6 +1343,7 @@ Tapez `/help <topic>` pour plus d'informations :
 - **config** - Configuration et changement de backend
 - **sandbox** - Répertoires ignorés et configuration des recherches
 - **history** - Sauvegarde et historique des discussions
+- **tools** - Diagnostic de compatibilité tool calling
 - **log** - Visualisation et recherche dans les logs
 - **ollama** - Commandes pour backend Ollama
 - **albert** - Commandes pour backend Albert
@@ -1671,6 +1948,58 @@ sandbox:
 
 💡 **Astuce:** Si une recherche prend trop de temps, vérifiez qu'elle n'explore
 pas .venv ou node_modules !
+""",
+            "tools": """
+# Diagnostic Tool Calling
+
+Les "tools" sont les outils que le LLM peut appeler pour agir (lire des fichiers,
+faire des recherches, exécuter des commandes...). Tous les modèles ne les supportent pas.
+
+## Commandes
+
+### /tools list
+Affiche la liste de tous les tools actuellement disponibles.
+
+### /tools test
+Lance un diagnostic complet de compatibilité :
+
+**Test 1 — Appel direct d'un tool**
+Demande au modèle d'appeler `list_files` sans expliquer.
+
+| Niveau | Résultat | Signification |
+|--------|----------|---------------|
+| A ✅   | Tool appelé correctement | Compatible — toutes tâches agentiques |
+| B ⚠    | Appelle un autre tool valide | Partiellement compatible |
+| C ❌   | Invente des noms de tools | Incompatible — tools inexistants |
+| D ❌   | Génère du texte explicatif | Incompatible — explique au lieu d'agir |
+| E ❌   | Ignore les tools | Complètement incompatible |
+
+**Test 2 — Auto-description des tools**
+Demande au modèle quels tools il connaît, compte les correspondances.
+
+## Détection Automatique
+
+Pendant l'utilisation normale, si le modèle génère une explication sur les tools
+au lieu de les appeler, un avertissement est affiché :
+```
+⚠ Le modèle semble avoir expliqué comment utiliser les outils...
+  → Tapez /tools test pour diagnostiquer
+```
+
+## Modèles Recommandés
+
+**Ollama (local) :**
+```
+/config backend set ollama qwen2.5:7b         (recommandé)
+/config backend set ollama qwen2.5-coder:7b   (code + tools)
+/config backend set ollama llama3.1:8b
+/config backend set ollama mistral-nemo:latest
+```
+
+⚠ `mistral:latest` (v0.3) ne supporte pas bien les tool calls.
+
+**Albert API :**
+La plupart des modèles Albert supportent nativement les tool calls.
 """,
         }
 
