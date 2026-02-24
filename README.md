@@ -1,8 +1,9 @@
-# UTILISER OPENCODE
-il fait la même chose mais est développé par plusieurs personnes et plusieurs connecteurs.
-[openCode](https://opencode.ai/)
 
 # agentichat
+
+## Avant, regarder OPENCODE
+il fait la même chose en gros, mais ne possède pas la partie suivi de discussion (pour ce qui est de mon idée de garder un contexte). Par contre, est développé par plusieurs personnes et possède plusieurs connecteurs : il est pour moi plus stable. 24/02/2026 : je suis en cours de tests sur ce logiciel. Première déconvenue, le suivi de contexte, a priori désactivé. La documentation qui n'est pas à jour (classique)
+obtenir et information sur [openCode](https://opencode.ai/).
 
 > 📖 **Version française** ci-dessous. [English version below](#english-version) ⬇️
 
