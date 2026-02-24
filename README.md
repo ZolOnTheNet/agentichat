@@ -1,3 +1,7 @@
+# UTILISER OPENCODE
+il fait la même chose mais est développé par plusieurs personnes et plusieurs connecteurs.
+[openCode](https://opencode.ai/)
+
 # agentichat
 
 > 📖 **Version française** ci-dessous. [English version below](#english-version) ⬇️
