@@ -677,7 +677,7 @@ class ChatApp:
                 await self.db.save_message(user_message)
 
                 # Vérifier si un avertissement de compression est nécessaire
-                self._check_compression_warning()
+                await self._check_compression_warning()
 
                 # Exécuter la boucle agentique
                 await self._process_agent_loop()
@@ -699,8 +699,19 @@ class ChatApp:
 
         self.console.print("\n[dim]Au revoir ![/dim]")
 
-    def _check_compression_warning(self) -> None:
-        """Vérifie et affiche un avertissement si la compression est recommandée."""
+        # Fermer proprement la session HTTP du backend si nécessaire
+        if self.backend and hasattr(self.backend, "close"):
+            try:
+                await self.backend.close()
+            except Exception:
+                pass
+
+    async def _check_compression_warning(self) -> None:
+        """Vérifie et affiche un avertissement si la compression est recommandée.
+
+        Si max_messages est configuré et auto_enabled est actif, déclenche
+        automatiquement la compression quand la limite est atteinte.
+        """
         compress_config = self.config.compression
 
         # Si pas de seuil configuré, pas d'avertissement
@@ -738,6 +749,17 @@ class ChatApp:
                 self.console.print(
                     "[dim]→ Tapez [bold]/help compress[/bold] pour plus d'infos ou "
                     "[bold]/config compress[/bold] pour configurer[/dim]\n"
+                )
+
+        # Appliquer max_messages si configuré ET auto_enabled actif
+        if compress_config.max_messages and compress_config.auto_enabled:
+            if message_count >= compress_config.max_messages:
+                self.console.print(
+                    f"\n[bold yellow]⚠ Limite de {compress_config.max_messages} messages atteinte, "
+                    f"compression automatique...[/bold yellow]"
+                )
+                await self._handle_compress_command(
+                    f"/compress --keep {compress_config.auto_keep}"
                 )
 
     def _display_token_stats(self, elapsed_total: float) -> None:
@@ -1145,56 +1167,51 @@ class ChatApp:
         except BackendError as e:
             # Afficher les stats avant le message d'erreur
             self._display_token_stats(time.time() - start_time)
-            # Erreur backend (potentiellement modèle invalide ou contrainte)
             error_msg = str(e)
 
-            # Détecter un rate limit (quota tokens dépassé)
-            if "tokens per minute exceeded" in error_msg.lower() or "rate limit" in error_msg.lower():
+            if e.error_type == BackendError.RATE_LIMIT:
                 self.console.print(
-                    f"\n[bold yellow]⚠ Quota API dépassé:[/bold yellow] {e}\n"
+                    "\n[bold yellow]⚠ Quota API dépassé[/bold yellow]\n"
                 )
                 self.console.print(
-                    "[yellow]L'API Albert limite le nombre de tokens par minute.[/yellow]\n"
+                    "[yellow]L'API limite le nombre de tokens par minute.[/yellow]\n"
                     "[dim]Solutions:[/dim]\n"
-                    "  • Attendez ~60 secondes avant de réessayer\n"
+                    "  • Le retry automatique a été épuisé. Attendez ~60 secondes\n"
                     "  • Utilisez [bold]/clear[/bold] pour réduire l'historique\n"
                     "  • Utilisez un modèle plus petit avec [bold]/albert run meta-llama/Llama-3.1-8B-Instruct[/bold]\n"
                 )
-                return
 
-            # Détecter et sauvegarder les contraintes du modèle
-            if self.backend and self.model_metadata.detect_and_save_constraint(
-                self.backend.model, error_msg
-            ):
+            elif e.error_type == BackendError.CONTEXT_TOO_LONG:
                 self.console.print(
-                    f"\n[bold yellow]⚠ Contrainte détectée:[/bold yellow] {e}\n"
+                    "\n[bold yellow]⚠ Contexte trop long pour ce modèle[/bold yellow]\n"
                 )
                 self.console.print(
-                    "[bold green]✓[/bold green] Contrainte sauvegardée automatiquement. "
-                    "Veuillez réessayer votre commande.\n"
+                    "[dim]Solutions:[/dim]\n"
+                    "  • Utilisez [bold]/compress[/bold] pour résumer l'historique\n"
+                    "  • Utilisez [bold]/clear[/bold] pour repartir de zéro\n"
+                    "  • Configurez [bold]context_max_tokens[/bold] dans votre config\n"
                 )
-                return
 
-            # Sinon, afficher l'erreur normalement
-            # Échapper le message d'erreur pour éviter les conflits de markup
-            error_display = str(e).replace("[", "\\[").replace("]", "\\]")
-            self.console.print(f"\n[bold red]Erreur:[/bold red] {error_display}")
-            logger.error(f"Backend error in agent loop: {e}", exc_info=True)
-
-            # Vérifier si c'est une erreur de modèle
-            error_msg_lower = error_msg.lower()
-            if "model" in error_msg_lower or "not found" in error_msg_lower or "404" in error_msg_lower:
+            elif e.error_type == BackendError.AUTH_ERROR:
                 self.console.print(
+                    f"\n[bold red]⚠ Erreur d'authentification:[/bold red] {e}\n"
+                )
+                self.console.print(
+                    "[dim]Vérifiez votre clé API dans la configuration "
+                    "([bold]/config[/bold] ou [bold]~/.agentichat/config.yaml[/bold])[/dim]\n"
+                )
+
+            elif e.error_type == BackendError.MODEL_NOT_FOUND:
+                error_display = error_msg.replace("[", "\\[").replace("]", "\\]")
+                self.console.print(
+                    f"\n[bold yellow]⚠ Modèle introuvable:[/bold yellow] {error_display}\n"
                     "[bold yellow]⚠ Le modèle semble invalide.[/bold yellow]\n"
                     "[dim]Voulez-vous choisir un autre modèle ? (y/n)[/dim] ",
                     end="",
                 )
-
-                # Demander confirmation
                 try:
                     choice = input().strip().lower()
                     if choice in ["y", "yes", "o", "oui"]:
-                        # Proposer la sélection
                         if await self._verify_model():
                             self.console.print(
                                 "[bold green]✓[/bold green] Modèle changé, "
@@ -1208,8 +1225,25 @@ class ChatApp:
                         self.console.print("[dim]→ Vous pouvez continuer avec une nouvelle commande[/dim]\n")
                 except Exception as input_error:
                     logger.error(f"Error getting user input: {input_error}")
+
             else:
-                # Autre erreur backend
+                # Tenter la détection de contrainte structurelle (ex: "only supports single tool-calls")
+                if self.backend and self.model_metadata.detect_and_save_constraint(
+                    self.backend.model, error_msg
+                ):
+                    self.console.print(
+                        f"\n[bold yellow]⚠ Contrainte détectée:[/bold yellow] {e}\n"
+                    )
+                    self.console.print(
+                        "[bold green]✓[/bold green] Contrainte sauvegardée automatiquement. "
+                        "Veuillez réessayer votre commande.\n"
+                    )
+                    return
+
+                # Erreur générique non catégorisée
+                error_display = error_msg.replace("[", "\\[").replace("]", "\\]")
+                self.console.print(f"\n[bold red]Erreur:[/bold red] {error_display}")
+                logger.error(f"Backend error in agent loop: {e}", exc_info=True)
                 self.console.print("[dim]→ Vous pouvez continuer avec une nouvelle commande[/dim]\n")
 
         except Exception as e:

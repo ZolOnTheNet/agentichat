@@ -181,14 +181,16 @@ class OllamaBackend(Backend):
             f"stream={stream}, timeout={self.timeout}s"
         )
 
-        try:
-            if stream:
-                # Pour le streaming, on doit garder la session ouverte
-                logger.debug("Starting streaming chat")
-                return self._stream_chat(endpoint, payload)
-            else:
-                # Pour le non-streaming, on peut fermer après avoir récupéré la réponse
-                logger.debug("Starting non-streaming chat")
+        if stream:
+            # Pour le streaming, on doit garder la session ouverte (pas de retry)
+            logger.debug("Starting streaming chat")
+            return self._stream_chat(endpoint, payload)
+
+        # Pour le non-streaming : retry automatique sur erreurs transitoires
+        logger.debug("Starting non-streaming chat")
+
+        async def _do_request():
+            try:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
                         endpoint,
@@ -197,13 +199,27 @@ class OllamaBackend(Backend):
                     ) as response:
                         if response.status != 200:
                             error_text = await response.text()
+                            error_type = (
+                                BackendError.MODEL_NOT_FOUND if response.status == 404
+                                else BackendError.SERVER_ERROR if response.status >= 500
+                                else BackendError.UNKNOWN
+                            )
                             raise BackendError(
-                                f"Ollama error: {error_text}", status_code=response.status
+                                f"Ollama error: {error_text}",
+                                status_code=response.status,
+                                error_type=error_type,
                             )
                         return await self._parse_response(response)
+            except aiohttp.ServerTimeoutError as e:
+                raise BackendError(
+                    f"Timeout: {e}", error_type=BackendError.TIMEOUT
+                ) from e
+            except aiohttp.ClientError as e:
+                raise BackendError(
+                    f"Connection error: {e}", error_type=BackendError.SERVER_ERROR
+                ) from e
 
-        except aiohttp.ClientError as e:
-            raise BackendError(f"Connection error: {e}") from e
+        return await self._retry_on_error(_do_request)
 
     async def _stream_chat(self, endpoint: str, payload: dict) -> AsyncIterator[str]:
         """Stream la réponse d'Ollama avec session HTTP maintenue.
@@ -223,8 +239,15 @@ class OllamaBackend(Backend):
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
+                    error_type = (
+                        BackendError.MODEL_NOT_FOUND if response.status == 404
+                        else BackendError.SERVER_ERROR if response.status >= 500
+                        else BackendError.UNKNOWN
+                    )
                     raise BackendError(
-                        f"Ollama error: {error_text}", status_code=response.status
+                        f"Ollama error: {error_text}",
+                        status_code=response.status,
+                        error_type=error_type,
                     )
 
                 # Lire ligne par ligne

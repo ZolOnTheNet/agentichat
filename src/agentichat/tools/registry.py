@@ -48,6 +48,7 @@ class ToolRegistry:
     def __init__(self) -> None:
         """Initialise le registre vide."""
         self._tools: dict[str, Tool] = {}
+        self._schemas_cache: list[dict] | None = None  # Invalidé à chaque register()
 
     def register(self, tool: Tool) -> None:
         """Enregistre un tool.
@@ -56,6 +57,7 @@ class ToolRegistry:
             tool: Tool à enregistrer
         """
         self._tools[tool.name] = tool
+        self._schemas_cache = None  # Invalider le cache
 
     def get(self, name: str) -> Tool | None:
         """Récupère un tool par son nom.
@@ -79,10 +81,14 @@ class ToolRegistry:
     def to_schemas(self) -> list[dict[str, Any]]:
         """Convertit tous les tools en schémas JSON.
 
+        Le résultat est mis en cache et recalculé uniquement après un register().
+
         Returns:
             Liste des schémas pour le LLM
         """
-        return [tool.to_schema() for tool in self._tools.values()]
+        if self._schemas_cache is None:
+            self._schemas_cache = [tool.to_schema() for tool in self._tools.values()]
+        return self._schemas_cache
 
     async def execute(
         self, name: str, arguments: dict[str, Any]

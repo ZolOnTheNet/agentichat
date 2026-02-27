@@ -5,10 +5,15 @@ from typing import Any, Callable
 
 from ..backends.base import Backend, Message, ToolCall
 from ..tools.registry import ToolRegistry
+from ..utils.logger import get_logger
+
+logger = get_logger("agentichat.core.agent")
 
 
 class AgentLoop:
     """Boucle agentique pour exécuter les tool calls du LLM."""
+
+    MAX_TOOL_RESULT_CHARS = 8000  # ~2000 tokens — limite des résultats d'outils
 
     def __init__(
         self,
@@ -29,6 +34,7 @@ class AgentLoop:
         self.registry = registry
         self.max_iterations = max_iterations
         self.confirmation_callback = confirmation_callback
+        self._system_message = self._build_system_message()
 
     async def run(
         self, messages: list[Message], stream_callback: Callable[[str], None] | None = None
@@ -42,63 +48,43 @@ class AgentLoop:
         Returns:
             Tuple (réponse finale, historique complet)
         """
-        # Ajouter un message système si pas déjà présent et si des tools sont disponibles
+        # Injecter le message système pré-construit si pas déjà présent
         has_system_message = messages and messages[0].role == "system"
-        if self.registry.list_tools() and not has_system_message:
-            system_message = Message(
-                role="system",
-                content=(
-                    "Vous êtes un assistant IA avec accès à des outils pour interagir avec "
-                    "le système de fichiers, le web et gérer des tâches.\n\n"
-                    "Quand l'utilisateur vous demande quelque chose, appelez les outils appropriés "
-                    "en utilisant le format suivant (\"arguments\" ou \"parameters\") :\n\n"
-                    "```json\n"
-                    '{"name": "nom_outil", "arguments": {"param1": "valeur1", "param2": "valeur2"}}\n'
-                    "```\n\n"
-                    "Note: Vous pouvez aussi utiliser \"parameters\" au lieu de \"arguments\" si vous préférez.\n\n"
-                    "Outils disponibles :\n\n"
-                    "**Fichiers :**\n"
-                    "- read_file : lit un fichier (param: path)\n"
-                    "- list_files : liste les fichiers (params: path, recursive, pattern)\n"
-                    "- write_file : crée/modifie un fichier (params: path, content, mode)\n"
-                    "- delete_file : supprime un fichier (param: path)\n"
-                    "- search_text : cherche du texte (params: pattern, path, recursive)\n"
-                    "- glob_search : cherche des fichiers par pattern glob (params: pattern, path, exclude)\n"
-                    "  Exemples: '*.py', '**/*.js', 'src/**/*.tsx'\n\n"
-                    "**Répertoires :**\n"
-                    "- create_directory : crée un répertoire (params: path, parents)\n"
-                    "- delete_directory : supprime un répertoire (params: path, recursive)\n"
-                    "- move_file : déplace/renomme fichier ou répertoire (params: source, destination, overwrite)\n"
-                    "- copy_file : copie fichier ou répertoire (params: source, destination, overwrite)\n\n"
-                    "**Web :**\n"
-                    "- web_fetch : récupère le contenu d'une URL (params: url, timeout)\n"
-                    "- web_search : recherche sur le web avec DuckDuckGo (params: query, max_results)\n\n"
-                    "**Système :**\n"
-                    "- shell_exec : exécute une commande (param: command)\n\n"
-                    "**Productivité :**\n"
-                    "- todo_write : crée/met à jour une liste de tâches (param: todos)\n"
-                    "  Chaque tâche doit avoir: content, status (pending/in_progress/completed), activeForm\n\n"
-                    "Exemple : Pour lire test.py :\n"
-                    "```json\n"
-                    '{"name": "read_file", "arguments": {"path": "test.py"}}\n'
-                    "```\n\n"
-                    "IMPORTANT : Appelez les outils directement, n'expliquez PAS à l'utilisateur "
-                    "comment les utiliser."
-                ),
-            )
-            messages = [system_message] + messages
+        if self._system_message and not has_system_message:
+            messages = [self._system_message] + messages
 
         iteration = 0
 
         while iteration < self.max_iterations:
             iteration += 1
 
+            # Tronquer le contexte si nécessaire (sans modifier l'historique complet)
+            trimmed_messages = self._trim_context(messages)
+
             # Envoyer au LLM avec les tools
             response = await self.backend.chat(
-                messages=messages,
+                messages=trimmed_messages,
                 tools=self.registry.to_schemas(),
                 stream=False,  # Pas de streaming pour les tool calls
             )
+
+            # Détecter une réponse tronquée par max_tokens
+            if response.finish_reason == "length" and not response.tool_calls:
+                logger.warning(
+                    "Réponse tronquée par max_tokens (finish_reason=length), "
+                    "demande de reformulation plus concise"
+                )
+                messages.append(
+                    Message(role="assistant", content=response.content or "")
+                )
+                messages.append(
+                    Message(
+                        role="user",
+                        content="[Système] Ta réponse a été tronquée (max_tokens atteint). "
+                        "Résume ta réponse de manière plus concise.",
+                    )
+                )
+                continue  # Refaire une itération avec la demande de reformulation
 
             # Si pas de tool calls, on a la réponse finale
             if not response.tool_calls:
@@ -120,6 +106,7 @@ class AgentLoop:
             # Exécuter chaque tool call
             for tool_call in response.tool_calls:
                 result = await self._execute_tool_call(tool_call)
+                result = self._truncate_tool_result(result)
 
                 # Ajouter le résultat à l'historique
                 messages.append(
@@ -144,6 +131,142 @@ class AgentLoop:
             Message(role="assistant", content=error_message)
         )
         return error_message, messages
+
+    def _build_system_message(self) -> Message | None:
+        """Construit le message système une seule fois à l'initialisation.
+
+        Returns:
+            Message système ou None si aucun tool n'est disponible.
+        """
+        if not self.registry.list_tools():
+            return None
+        return Message(
+            role="system",
+            content=(
+                "Vous êtes un assistant IA avec accès à des outils pour interagir avec "
+                "le système de fichiers, le web et gérer des tâches.\n\n"
+                "Quand l'utilisateur vous demande quelque chose, appelez les outils appropriés "
+                "en utilisant le format suivant (\"arguments\" ou \"parameters\") :\n\n"
+                "```json\n"
+                '{"name": "nom_outil", "arguments": {"param1": "valeur1", "param2": "valeur2"}}\n'
+                "```\n\n"
+                "Note: Vous pouvez aussi utiliser \"parameters\" au lieu de \"arguments\" si vous préférez.\n\n"
+                "Outils disponibles :\n\n"
+                "**Fichiers :**\n"
+                "- read_file : lit un fichier (param: path)\n"
+                "- list_files : liste les fichiers (params: path, recursive, pattern)\n"
+                "- write_file : crée/modifie un fichier (params: path, content, mode)\n"
+                "- delete_file : supprime un fichier (param: path)\n"
+                "- search_text : cherche du texte (params: pattern, path, recursive)\n"
+                "- glob_search : cherche des fichiers par pattern glob (params: pattern, path, exclude)\n"
+                "  Exemples: '*.py', '**/*.js', 'src/**/*.tsx'\n\n"
+                "**Répertoires :**\n"
+                "- create_directory : crée un répertoire (params: path, parents)\n"
+                "- delete_directory : supprime un répertoire (params: path, recursive)\n"
+                "- move_file : déplace/renomme fichier ou répertoire (params: source, destination, overwrite)\n"
+                "- copy_file : copie fichier ou répertoire (params: source, destination, overwrite)\n\n"
+                "**Web :**\n"
+                "- web_fetch : récupère le contenu d'une URL (params: url, timeout)\n"
+                "- web_search : recherche sur le web avec DuckDuckGo (params: query, max_results)\n\n"
+                "**Système :**\n"
+                "- shell_exec : exécute une commande (param: command)\n\n"
+                "**Productivité :**\n"
+                "- todo_write : crée/met à jour une liste de tâches (param: todos)\n"
+                "  Chaque tâche doit avoir: content, status (pending/in_progress/completed), activeForm\n\n"
+                "Exemple : Pour lire test.py :\n"
+                "```json\n"
+                '{"name": "read_file", "arguments": {"path": "test.py"}}\n'
+                "```\n\n"
+                "IMPORTANT : Appelez les outils directement, n'expliquez PAS à l'utilisateur "
+                "comment les utiliser."
+            ),
+        )
+
+    def _trim_context(self, messages: list[Message]) -> list[Message]:
+        """Tronque les messages pour respecter la limite de tokens du backend.
+
+        Stratégie en deux phases :
+        1. Tronquer les tool results trop longs (> 2000 chars) en gardant début + fin
+        2. Supprimer les messages les plus anciens (hors système) si encore trop grand
+
+        Le message système et les 4 derniers messages sont toujours conservés.
+
+        Args:
+            messages: Liste complète des messages (non modifiée en dehors de cette méthode)
+
+        Returns:
+            Liste tronquée prête à être envoyée au backend, ou la liste originale si
+            aucune troncature n'est nécessaire.
+        """
+        max_tokens = getattr(self.backend, "context_max_tokens", None)
+        if not max_tokens:
+            return messages
+
+        # Réserver 20% pour la réponse + les schemas des tools
+        budget = int(max_tokens * 0.80)
+
+        if self.backend.estimate_messages_tokens(messages) <= budget:
+            return messages
+
+        # Travailler sur une copie pour ne pas altérer l'historique original
+        import copy
+        working = copy.deepcopy(messages)
+
+        # Phase 1 : Tronquer les tool results volumineux
+        for msg in working:
+            if msg.role == "tool" and len(msg.content or "") > 2000:
+                content = msg.content
+                msg.content = (
+                    content[:500]
+                    + f"\n\n[... {len(content) - 1000} caractères omis ...]\n\n"
+                    + content[-500:]
+                )
+
+        if self.backend.estimate_messages_tokens(working) <= budget:
+            return working
+
+        # Phase 2 : Supprimer les messages anciens (garder system + 4 derniers)
+        system_msgs = [m for m in working if m.role == "system"]
+        non_system = [m for m in working if m.role != "system"]
+
+        min_keep = 4
+        while len(non_system) > min_keep:
+            non_system.pop(0)
+            trial = system_msgs + non_system
+            if self.backend.estimate_messages_tokens(trial) <= budget:
+                return trial
+
+        return system_msgs + non_system
+
+    def _truncate_tool_result(self, result: dict) -> dict:
+        """Tronque les résultats d'outils trop volumineux.
+
+        Vérifie d'abord la taille totale sérialisée. Si elle dépasse
+        MAX_TOOL_RESULT_CHARS, tronque le champ "content" en gardant
+        le début et la fin pour que le LLM comprenne la structure.
+
+        Args:
+            result: Dict résultat d'un tool call (modifié en place si trop grand)
+
+        Returns:
+            Le même dict, potentiellement tronqué.
+        """
+        if len(json.dumps(result)) <= self.MAX_TOOL_RESULT_CHARS:
+            return result
+
+        if isinstance(result.get("content"), str):
+            content = result["content"]
+            if len(content) > self.MAX_TOOL_RESULT_CHARS:
+                half = self.MAX_TOOL_RESULT_CHARS // 2
+                omitted = len(content) - self.MAX_TOOL_RESULT_CHARS
+                result["content"] = (
+                    content[:half]
+                    + f"\n\n[... {omitted} caractères omis ...]\n\n"
+                    + content[-half:]
+                )
+                result["_truncated"] = True
+
+        return result
 
     async def _execute_tool_call(self, tool_call: ToolCall) -> dict[str, Any]:
         """Exécute un tool call avec confirmation si nécessaire.

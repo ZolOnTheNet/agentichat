@@ -34,6 +34,7 @@ class AlbertBackend(Backend):
         """
         super().__init__(*args, **kwargs)
         self.last_usage: dict | None = None
+        self._session: aiohttp.ClientSession | None = None  # Session HTTP persistante
 
         # Vérifier que l'API key est présente
         if not self.api_key:
@@ -269,6 +270,50 @@ class AlbertBackend(Backend):
 
         return tool_calls if tool_calls else None
 
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Retourne la session HTTP persistante, en en créant une si nécessaire.
+
+        Returns:
+            Session aiohttp réutilisable entre les appels API.
+        """
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        """Ferme proprement la session HTTP persistante.
+
+        À appeler à la sortie de l'application.
+        """
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    @staticmethod
+    def _categorize_http_error(status_code: int, error_text: str) -> str:
+        """Retourne le type BackendError correspondant au code HTTP et au texte d'erreur.
+
+        Args:
+            status_code: Code HTTP de la réponse
+            error_text: Corps de la réponse d'erreur
+
+        Returns:
+            Une des constantes BackendError (RATE_LIMIT, AUTH_ERROR, etc.)
+        """
+        if status_code == 429:
+            return BackendError.RATE_LIMIT
+        if status_code in (401, 403):
+            return BackendError.AUTH_ERROR
+        if status_code == 404:
+            return BackendError.MODEL_NOT_FOUND
+        if status_code >= 500:
+            return BackendError.SERVER_ERROR
+        # Détecter un contexte trop long via le texte (codes 400/422)
+        error_lower = error_text.lower()
+        if any(k in error_lower for k in ("context", "too long", "maximum context", "context length", "token")):
+            return BackendError.CONTEXT_TOO_LONG
+        return BackendError.UNKNOWN
+
     def _get_headers(self) -> dict[str, str]:
         """Retourne les headers HTTP avec authentification.
 
@@ -351,31 +396,43 @@ class AlbertBackend(Backend):
             f"stream={stream}, timeout={self.timeout}s"
         )
 
-        try:
-            if stream:
-                # Pour le streaming, on doit garder la session ouverte
-                logger.debug("Starting streaming chat")
-                return self._stream_chat(endpoint, payload)
-            else:
-                # Pour le non-streaming, on peut fermer après avoir récupéré la réponse
-                logger.debug("Starting non-streaming chat")
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        endpoint,
-                        json=payload,
-                        headers=self._get_headers(),
-                        timeout=aiohttp.ClientTimeout(total=self.timeout),
-                    ) as response:
-                        if response.status != 200:
-                            error_text = await response.text()
-                            raise BackendError(
-                                f"Albert API error: {error_text}",
-                                status_code=response.status,
-                            )
-                        return await self._parse_response(response)
+        if stream:
+            # Pour le streaming, on doit garder la session ouverte (pas de retry)
+            logger.debug("Starting streaming chat")
+            return self._stream_chat(endpoint, payload)
 
-        except aiohttp.ClientError as e:
-            raise BackendError(f"Connection error: {e}") from e
+        # Pour le non-streaming : retry automatique sur erreurs transitoires
+        logger.debug("Starting non-streaming chat")
+
+        async def _do_request():
+            try:
+                session = await self._get_session()
+                async with session.post(
+                    endpoint,
+                    json=payload,
+                    headers=self._get_headers(),
+                    timeout=aiohttp.ClientTimeout(total=self.timeout),
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise BackendError(
+                            f"Albert API error: {error_text}",
+                            status_code=response.status,
+                            error_type=self._categorize_http_error(response.status, error_text),
+                        )
+                    return await self._parse_response(response)
+            except aiohttp.ServerTimeoutError as e:
+                raise BackendError(
+                    f"Timeout: {e}", error_type=BackendError.TIMEOUT
+                ) from e
+            except aiohttp.ClientError as e:
+                # Réinitialiser la session en cas d'erreur de connexion
+                self._session = None
+                raise BackendError(
+                    f"Connection error: {e}", error_type=BackendError.SERVER_ERROR
+                ) from e
+
+        return await self._retry_on_error(_do_request)
 
     async def _stream_chat(self, endpoint: str, payload: dict) -> AsyncIterator[str]:
         """Stream la réponse d'Albert avec session HTTP maintenue.
@@ -387,21 +444,22 @@ class AlbertBackend(Backend):
         Yields:
             Chunks de texte au fur et à mesure
         """
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                endpoint,
-                json=payload,
-                headers=self._get_headers(),
-                timeout=aiohttp.ClientTimeout(total=self.timeout),
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    raise BackendError(
-                        f"Albert API error: {error_text}",
-                        status_code=response.status,
-                    )
+        session = await self._get_session()
+        async with session.post(
+            endpoint,
+            json=payload,
+            headers=self._get_headers(),
+            timeout=aiohttp.ClientTimeout(total=self.timeout),
+        ) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                raise BackendError(
+                    f"Albert API error: {error_text}",
+                    status_code=response.status,
+                    error_type=self._categorize_http_error(response.status, error_text),
+                )
 
-                # Lire ligne par ligne (format SSE)
+            # Lire ligne par ligne (format SSE)
                 async for line in response.content:
                     if not line:
                         continue
@@ -523,25 +581,29 @@ class AlbertBackend(Backend):
         endpoint = f"{self.url}/v1/models"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    endpoint,
-                    headers=self._get_headers(),
-                    timeout=aiohttp.ClientTimeout(total=10),
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        raise BackendError(
-                            f"Albert API error: {error_text}",
-                            status_code=response.status,
-                        )
+            session = await self._get_session()
+            async with session.get(
+                endpoint,
+                headers=self._get_headers(),
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise BackendError(
+                        f"Albert API error: {error_text}",
+                        status_code=response.status,
+                        error_type=self._categorize_http_error(response.status, error_text),
+                    )
 
-                    data = await response.json()
-                    models = data.get("data", [])
-                    return [model["id"] for model in models]
+                data = await response.json()
+                models = data.get("data", [])
+                return [model["id"] for model in models]
 
+        except aiohttp.ServerTimeoutError as e:
+            raise BackendError(f"Timeout: {e}", error_type=BackendError.TIMEOUT) from e
         except aiohttp.ClientError as e:
-            raise BackendError(f"Connection error: {e}") from e
+            self._session = None
+            raise BackendError(f"Connection error: {e}", error_type=BackendError.SERVER_ERROR) from e
 
     async def health_check(self) -> bool:
         """Vérifie que l'API Albert est accessible.
